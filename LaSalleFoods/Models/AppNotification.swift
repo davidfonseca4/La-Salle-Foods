@@ -4,43 +4,59 @@
 //
 //  Aviso dentro de la app. Sirve tanto para el dueño del local (ej. el
 //  comprador canceló un pedido) como para el alumno (ej. su pedido ya
-//  está listo para recoger). El destinatario se identifica con
-//  `audienceID`: el id del local para el dueño, o el nombre del cliente
-//  para el alumno.
+//  está listo para recoger). El destinatario es siempre `profiles.id`,
+//  sin importar el rol — RLS garantiza que cada quien solo vea lo suyo.
 //
 
 import Foundation
 
-struct AppNotification: Identifiable, Codable, Hashable {
+struct AppNotification: Identifiable, Decodable, Hashable {
     let id: UUID
-    var audienceID: String
+    var recipientID: UUID
+    var orderID: UUID
+    var relatedStatus: OrderStatus?
     var title: String
     var message: String
-    var orderFolio: String
-    var iconName: String
-    var tintHex: UInt
     var createdAt: Date
     var isRead: Bool
 
     init(
         id: UUID = UUID(),
-        audienceID: String,
+        recipientID: UUID,
+        orderID: UUID,
+        relatedStatus: OrderStatus? = nil,
         title: String,
         message: String,
-        orderFolio: String,
-        iconName: String,
-        tintHex: UInt,
         createdAt: Date = .now,
         isRead: Bool = false
     ) {
         self.id = id
-        self.audienceID = audienceID
+        self.recipientID = recipientID
+        self.orderID = orderID
+        self.relatedStatus = relatedStatus
         self.title = title
         self.message = message
-        self.orderFolio = orderFolio
-        self.iconName = iconName
-        self.tintHex = tintHex
         self.createdAt = createdAt
         self.isRead = isRead
+    }
+
+    /// El backend solo guarda `related_status`; ícono y color se derivan
+    /// en el momento desde las computed properties que ya existen en
+    /// `OrderStatus` — no se duplican datos de presentación.
+    var iconName: String {
+        relatedStatus?.icon ?? "bell.fill"
+    }
+
+    var tintHex: UInt {
+        relatedStatus?.colorHex ?? 0x0B3D91
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case id, title, message
+        case recipientID = "recipient_id"
+        case orderID = "order_id"
+        case relatedStatus = "related_status"
+        case createdAt = "created_at"
+        case isRead = "is_read"
     }
 }

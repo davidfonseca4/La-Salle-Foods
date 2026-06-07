@@ -144,14 +144,12 @@ struct CartView: View {
 
     private func placeOrder() {
         guard let restaurant else { return }
-        let order = orders.placeOrder(
-            items: cart.items,
-            restaurant: restaurant,
-            customerName: session.currentUser?.name ?? "Alumno",
-            paymentMethod: paymentMethod
-        )
-        cart.clear()
-        placedOrder = order
+        Task {
+            if let order = await orders.placeOrder(items: cart.items, restaurant: restaurant, paymentMethod: paymentMethod) {
+                cart.clear()
+                placedOrder = order
+            }
+        }
     }
 }
 
@@ -233,9 +231,10 @@ private struct PaymentOptionRow: View {
 }
 
 #Preview {
+    let restaurantID = UUID()
     let cart = CartStore()
-    cart.add(MockData.products[0], quantity: 2)
-    cart.add(MockData.products[3])
+    cart.add(Product(restaurantID: restaurantID, name: "Torta de milanesa", description: "Milanesa, aguacate y frijoles.", price: 65, category: .mains, symbol: "takeoutbag.and.cup.and.straw.fill"), quantity: 2)
+    cart.add(Product(restaurantID: restaurantID, name: "Agua de horchata", description: "Vaso de 500 ml.", price: 20, category: .drinks, symbol: "cup.and.saucer.fill"))
     return NavigationStack {
         CartView()
             .environmentObject(SessionStore())

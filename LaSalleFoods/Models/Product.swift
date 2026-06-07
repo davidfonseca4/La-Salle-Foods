@@ -8,7 +8,7 @@
 
 import Foundation
 
-struct Product: Identifiable, Codable, Hashable {
+struct Product: Identifiable, Decodable, Hashable {
     let id: UUID
     var restaurantID: UUID
     var name: String
@@ -40,6 +40,46 @@ struct Product: Identifiable, Codable, Hashable {
         self.symbol = symbol
         self.isAvailable = isAvailable
         self.isPopular = isPopular
+    }
+
+    // MARK: - Decodificación desde Supabase
+    //
+    // El backend referencia la categoría por `category_id` (FK a
+    // `product_categories`); aquí se obtiene su nombre vía join
+    // (`select("*, product_categories(name)")`) y se mapea al `rawValue`
+    // del enum, que coincide textualmente con `product_categories.name`.
+
+    private enum CodingKeys: String, CodingKey {
+        case id, name, description, price, symbol
+        case restaurantID = "restaurant_id"
+        case categoryRelation = "product_categories"
+        case isAvailable = "is_available"
+        case isPopular = "is_popular"
+    }
+
+    private struct CategoryRelation: Decodable { let name: String }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+
+        id = try container.decode(UUID.self, forKey: .id)
+        restaurantID = try container.decode(UUID.self, forKey: .restaurantID)
+        name = try container.decode(String.self, forKey: .name)
+        description = try container.decodeIfPresent(String.self, forKey: .description) ?? ""
+        price = try container.decode(Double.self, forKey: .price)
+        symbol = try container.decode(String.self, forKey: .symbol)
+        isAvailable = try container.decode(Bool.self, forKey: .isAvailable)
+        isPopular = try container.decode(Bool.self, forKey: .isPopular)
+
+        let relation = try container.decode(CategoryRelation.self, forKey: .categoryRelation)
+        guard let mapped = ProductCategory(rawValue: relation.name) else {
+            throw DecodingError.dataCorruptedError(
+                forKey: .categoryRelation,
+                in: container,
+                debugDescription: "Categoría de producto desconocida: \(relation.name)"
+            )
+        }
+        category = mapped
     }
 }
 

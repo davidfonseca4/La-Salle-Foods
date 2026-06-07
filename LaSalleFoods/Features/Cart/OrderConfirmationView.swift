@@ -105,6 +105,18 @@ struct OrderConfirmationView: View {
 }
 
 #Preview {
-    OrderConfirmationView(order: MockData.sampleOrders(for: "David").first!)
-        .environmentObject(AppState())
+    OrderConfirmationView(order: Order(
+        folio: "LSF-2048",
+        restaurantID: UUID(),
+        restaurantName: "Tortas Doña Mary",
+        lines: [
+            OrderLine(productName: "Torta de milanesa", quantity: 1, unitPrice: 65),
+            OrderLine(productName: "Agua de horchata", quantity: 1, unitPrice: 20)
+        ],
+        paymentMethod: .cash,
+        status: .preparing,
+        createdAt: Date().addingTimeInterval(-600),
+        pickupCode: "A12"
+    ))
+    .environmentObject(AppState())
 }

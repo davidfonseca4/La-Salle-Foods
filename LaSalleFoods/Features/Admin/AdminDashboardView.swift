@@ -41,8 +41,8 @@ struct AdminDashboardView: View {
             .navigationTitle("Panel del local")
             .toolbar {
                 ToolbarItem(placement: .topBarLeading) {
-                    if let restaurant {
-                        let unread = orders.unreadCount(forAudience: restaurant.id.uuidString)
+                    if restaurant != nil {
+                        let unread = orders.unreadCount
                         Image(systemName: unread > 0 ? "bell.badge.fill" : "bell")
                             .foregroundStyle(unread > 0 ? AppColor.danger : AppColor.textSecondary)
                             .overlay(alignment: .topTrailing) {
@@ -80,7 +80,7 @@ struct AdminDashboardView: View {
                 presenting: productToDelete
             ) { product in
                 Button("Eliminar", role: .destructive) {
-                    catalog.deleteProduct(product)
+                    Task { await catalog.deleteProduct(product) }
                     productToDelete = nil
                 }
                 Button("Cancelar", role: .cancel) { productToDelete = nil }
@@ -99,7 +99,7 @@ struct AdminDashboardView: View {
 
     private func statsRow(for restaurant: Restaurant) -> some View {
         let items = catalog.products(for: restaurant.id)
-        let received = orders.orders(forRestaurant: restaurant.id)
+        let received = orders.orders
         return HStack(spacing: AppSpacing.sm) {
             StatCard(value: "\(items.count)", label: "Productos", icon: "fork.knife", hex: 0xFF7426)
             StatCard(value: "\(items.filter { !$0.isAvailable }.count)", label: "Agotados", icon: "xmark.circle.fill", hex: 0xE23744)
@@ -111,7 +111,7 @@ struct AdminDashboardView: View {
 
     @ViewBuilder
     private func notificationsSection(for restaurant: Restaurant) -> some View {
-        let items = orders.notifications(forAudience: restaurant.id.uuidString)
+        let items = orders.notifications
         if !items.isEmpty {
             VStack(alignment: .leading, spacing: AppSpacing.sm) {
                 SectionHeader(title: "Avisos")
@@ -119,14 +119,14 @@ struct AdminDashboardView: View {
                     AdminNotificationRow(notification: notification)
                 }
             }
-            .onAppear { orders.markNotificationsRead(forAudience: restaurant.id.uuidString) }
+            .task { await orders.markAllNotificationsRead() }
         }
     }
 
     // MARK: - Pedidos recibidos
 
     private func receivedOrdersSection(for restaurant: Restaurant) -> some View {
-        let received = orders.orders(forRestaurant: restaurant.id)
+        let received = orders.orders
         return VStack(alignment: .leading, spacing: AppSpacing.sm) {
             SectionHeader(title: "Pedidos recibidos")
             if received.isEmpty {
@@ -137,7 +137,7 @@ struct AdminDashboardView: View {
             } else {
                 ForEach(received) { order in
                     AdminOrderRow(order: order) { newStatus in
-                        orders.updateStatus(order, to: newStatus)
+                        Task { await orders.updateStatus(order, to: newStatus) }
                     }
                 }
             }
@@ -153,7 +153,7 @@ struct AdminDashboardView: View {
             ForEach(items) { product in
                 AdminProductRow(
                     product: product,
-                    onToggle: { catalog.toggleAvailability(product) },
+                    onToggle: { Task { await catalog.toggleAvailability(product) } },
                     onEdit: { productFormMode = .edit(product) },
                     onDelete: { productToDelete = product }
                 )
@@ -283,7 +283,7 @@ private struct AdminOrderRow: View {
         VStack(alignment: .leading, spacing: AppSpacing.sm) {
             HStack {
                 VStack(alignment: .leading, spacing: 2) {
-                    Text("\(order.folio) · \(order.customerName)")
+                    Text(order.folio)
                         .font(AppFont.callout())
                         .foregroundStyle(AppColor.textPrimary)
                     Text("Recogida \(order.pickupCode) · \(order.itemCount) productos")
@@ -324,11 +324,7 @@ private struct AdminOrderRow: View {
 
 #Preview {
     AdminDashboardView()
-        .environmentObject({ () -> SessionStore in
-            let s = SessionStore()
-            s.signIn(email: "local@lasalle.edu.mx", password: "demo1234", role: .owner)
-            return s
-        }())
+        .environmentObject(SessionStore())
         .environmentObject(CatalogStore())
         .environmentObject(OrderStore())
 }

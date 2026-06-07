@@ -150,35 +150,37 @@ struct ProductFormView: View {
 
     private func save() {
         let price = Double(priceText) ?? 0
-        switch mode {
-        case let .create(restaurantID):
-            let product = Product(
-                restaurantID: restaurantID,
-                name: name,
-                description: description,
-                price: price,
-                category: category,
-                symbol: symbol,
-                isAvailable: isAvailable,
-                isPopular: isPopular
-            )
-            catalog.addProduct(product)
-        case let .edit(existing):
-            var updated = existing
-            updated.name = name
-            updated.description = description
-            updated.price = price
-            updated.category = category
-            updated.symbol = symbol
-            updated.isAvailable = isAvailable
-            updated.isPopular = isPopular
-            catalog.updateProduct(updated)
+        Task {
+            switch mode {
+            case let .create(restaurantID):
+                await catalog.addProduct(
+                    restaurantID: restaurantID,
+                    name: name,
+                    description: description,
+                    price: price,
+                    category: category,
+                    symbol: symbol,
+                    isAvailable: isAvailable,
+                    isPopular: isPopular
+                )
+            case let .edit(existing):
+                await catalog.updateProduct(
+                    existing,
+                    name: name,
+                    description: description,
+                    price: price,
+                    category: category,
+                    symbol: symbol,
+                    isAvailable: isAvailable,
+                    isPopular: isPopular
+                )
+            }
+            dismiss()
         }
-        dismiss()
     }
 }
 
 #Preview {
-    ProductFormView(mode: .create(restaurantID: MockData.tortasID))
+    ProductFormView(mode: .create(restaurantID: UUID()))
         .environmentObject(CatalogStore())
 }

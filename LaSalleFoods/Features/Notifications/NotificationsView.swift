@@ -9,13 +9,10 @@
 import SwiftUI
 
 struct NotificationsView: View {
-    /// Identificador del destinatario (nombre del cliente para el alumno).
-    let audienceID: String
-
     @EnvironmentObject private var orders: OrderStore
 
     private var items: [AppNotification] {
-        orders.notifications(forAudience: audienceID)
+        orders.notifications
     }
 
     var body: some View {
@@ -40,7 +37,7 @@ struct NotificationsView: View {
         .background(AppColor.background.ignoresSafeArea())
         .navigationTitle("Notificaciones")
         .navigationBarTitleDisplayMode(.inline)
-        .onAppear { orders.markNotificationsRead(forAudience: audienceID) }
+        .task { await orders.markAllNotificationsRead() }
     }
 }
 
@@ -82,7 +79,7 @@ struct NotificationRow: View {
 
 #Preview {
     NavigationStack {
-        NotificationsView(audienceID: MockData.studentUser.name)
+        NotificationsView()
             .environmentObject(OrderStore())
     }
 }

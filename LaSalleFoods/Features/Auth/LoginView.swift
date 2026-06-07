@@ -19,7 +19,6 @@ struct LoginView: View {
         ScrollView {
             VStack(spacing: AppSpacing.lg) {
                 header
-                roleSelector
                 form
                 footer
             }
@@ -59,24 +58,6 @@ struct LoginView: View {
         }
     }
 
-    // MARK: - Selector de rol
-
-    private var roleSelector: some View {
-        VStack(alignment: .leading, spacing: AppSpacing.xs) {
-            Text("Ingresa como")
-                .font(AppFont.callout())
-                .foregroundStyle(AppColor.textSecondary)
-
-            HStack(spacing: AppSpacing.sm) {
-                ForEach(UserRole.allCases) { role in
-                    RoleCard(role: role, isSelected: viewModel.role == role) {
-                        withAnimation(.snappy) { viewModel.role = role }
-                    }
-                }
-            }
-        }
-    }
-
     // MARK: - Formulario
 
     private var form: some View {
@@ -103,26 +84,17 @@ struct LoginView: View {
             .submitLabel(.go)
             .onSubmit { viewModel.signIn(using: session) }
 
-            if let error = viewModel.errorMessage {
+            if let error = session.errorMessage {
                 Text(error)
                     .font(AppFont.caption())
                     .foregroundStyle(AppColor.danger)
                     .frame(maxWidth: .infinity, alignment: .leading)
             }
 
-            HStack {
-                Spacer()
-                Button("Usar datos de demo") {
-                    viewModel.fillDemoCredentials()
-                }
-                .font(AppFont.caption())
-                .foregroundStyle(AppColor.blue)
-            }
-
             AppButton(
                 title: "Iniciar sesión",
                 icon: "arrow.right",
-                isLoading: viewModel.isLoading,
+                isLoading: session.isLoading,
                 isEnabled: viewModel.isFormValid
             ) {
                 focusedField = nil
@@ -150,40 +122,6 @@ struct LoginView: View {
                 .foregroundStyle(AppColor.textPlaceholder)
         }
         .padding(.top, AppSpacing.xs)
-    }
-}
-
-// MARK: - Tarjeta de rol
-
-private struct RoleCard: View {
-    let role: UserRole
-    let isSelected: Bool
-    let action: () -> Void
-
-    var body: some View {
-        Button(action: action) {
-            VStack(alignment: .leading, spacing: AppSpacing.xs) {
-                Image(systemName: role.icon)
-                    .font(.system(size: 24, weight: .semibold))
-                    .foregroundStyle(isSelected ? .white : AppColor.orange)
-                Text(role.title)
-                    .font(AppFont.headline())
-                    .foregroundStyle(isSelected ? .white : AppColor.textPrimary)
-                Text(role.subtitle)
-                    .font(AppFont.caption())
-                    .foregroundStyle(isSelected ? .white.opacity(0.85) : AppColor.textSecondary)
-                    .multilineTextAlignment(.leading)
-            }
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(AppSpacing.md)
-            .background(isSelected ? AppColor.orange : AppColor.surface)
-            .clipShape(RoundedRectangle(cornerRadius: AppRadius.lg, style: .continuous))
-            .overlay(
-                RoundedRectangle(cornerRadius: AppRadius.lg, style: .continuous)
-                    .stroke(isSelected ? Color.clear : AppColor.border, lineWidth: 1)
-            )
-        }
-        .buttonStyle(.plain)
     }
 }
 

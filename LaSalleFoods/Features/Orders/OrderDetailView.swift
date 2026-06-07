@@ -41,7 +41,7 @@ struct OrderDetailView: View {
             titleVisibility: .visible
         ) {
             Button("Sí, cancelar pedido", role: .destructive) {
-                orders.cancelByCustomer(current)
+                Task { await orders.cancelByCustomer(current) }
             }
             Button("No, mantener", role: .cancel) {}
         } message: {
@@ -204,7 +204,19 @@ private struct TimelineRow: View {
 
 #Preview {
     NavigationStack {
-        OrderDetailView(order: MockData.sampleOrders(for: "David").first!)
-            .environmentObject(OrderStore())
+        OrderDetailView(order: Order(
+            folio: "LSF-2048",
+            restaurantID: UUID(),
+            restaurantName: "Tortas Doña Mary",
+            lines: [
+                OrderLine(productName: "Torta de milanesa", quantity: 1, unitPrice: 65),
+                OrderLine(productName: "Agua de horchata", quantity: 1, unitPrice: 20)
+            ],
+            paymentMethod: .cash,
+            status: .preparing,
+            createdAt: Date().addingTimeInterval(-600),
+            pickupCode: "A12"
+        ))
+        .environmentObject(OrderStore())
     }
 }

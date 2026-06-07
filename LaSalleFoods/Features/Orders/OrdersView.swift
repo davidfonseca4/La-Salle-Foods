@@ -8,7 +8,6 @@
 import SwiftUI
 
 struct OrdersView: View {
-    @EnvironmentObject private var session: SessionStore
     @EnvironmentObject private var orders: OrderStore
     @State private var searchText = ""
 
@@ -59,12 +58,8 @@ struct OrdersView: View {
         }
     }
 
-    private var customerName: String {
-        session.currentUser?.name ?? MockData.studentUser.name
-    }
-
     private var results: [Order] {
-        orders.search(searchText, customerName: customerName)
+        orders.search(searchText)
     }
 
     private var activeOrders: [Order] {

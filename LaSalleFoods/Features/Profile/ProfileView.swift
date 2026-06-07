@@ -17,7 +17,7 @@ struct ProfileView: View {
                     profileHeader
                     optionsCard
                     AppButton(title: "Cerrar sesión", icon: "rectangle.portrait.and.arrow.right", kind: .destructive) {
-                        withAnimation { session.signOut() }
+                        Task { await session.signOut() }
                     }
                 }
                 .padding(.horizontal, AppSpacing.lg)
@@ -287,9 +287,5 @@ private struct HelpSupportView: View {
 
 #Preview {
     ProfileView()
-        .environmentObject({ () -> SessionStore in
-            let s = SessionStore()
-            s.signIn(email: "alumno@lasalle.edu.mx", password: "demo1234", role: .student)
-            return s
-        }())
+        .environmentObject(SessionStore())
 }

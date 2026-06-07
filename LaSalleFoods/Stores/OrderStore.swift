@@ -2,121 +2,71 @@
 //  OrderStore.swift
 //  LaSalleFoods
 //
-//  Almacena los pedidos. Para el alumno expone su historial; para el dueño,
-//  los pedidos recibidos en su local.
+//  Almacena los pedidos visibles para la sesión activa: para el alumno,
+//  su historial; para el dueño, los pedidos recibidos en su local. RLS
+//  ya filtra esto del lado del servidor, así que basta una sola consulta.
 //
 
 import SwiftUI
+import Supabase
 
 @MainActor
 final class OrderStore: ObservableObject {
-    @Published private(set) var orders: [Order]
-    /// Avisos dentro de la app (para el local y para el alumno).
+    @Published private(set) var orders: [Order] = []
     @Published private(set) var notifications: [AppNotification] = []
+    @Published var errorMessage: String?
+    @Published private(set) var isLoading = false
 
-    private var folioCounter = 2049
+    private let client = SupabaseManager.client
+    private static let orderSelection = "*, restaurants(name), order_lines(*)"
 
-    init(orders: [Order] = MockData.sampleOrders(for: MockData.studentUser.name)) {
-        self.orders = orders
+    var unreadCount: Int {
+        notifications.filter { !$0.isRead }.count
+    }
+
+    // MARK: - Carga
+
+    /// Trae los pedidos visibles para el usuario activo (RLS decide si son
+    /// los propios del alumno o los recibidos por el local del dueño).
+    func loadOrders() async {
+        errorMessage = nil
+        isLoading = true
+        defer { isLoading = false }
+        do {
+            orders = try await client
+                .from("orders")
+                .select(Self.orderSelection)
+                .order("created_at", ascending: false)
+                .execute()
+                .value
+        } catch {
+            errorMessage = error.localizedDescription
+        }
+    }
+
+    func loadNotifications() async {
+        do {
+            notifications = try await client
+                .from("notifications")
+                .select()
+                .order("created_at", ascending: false)
+                .execute()
+                .value
+        } catch {
+            errorMessage = error.localizedDescription
+        }
     }
 
     // MARK: - Consultas
 
-    func orders(forCustomer name: String) -> [Order] {
-        orders
-            .filter { $0.customerName == name }
-            .sorted { $0.createdAt > $1.createdAt }
-    }
-
-    func orders(forRestaurant id: UUID) -> [Order] {
-        orders
-            .filter { $0.restaurantID == id }
-            .sorted { $0.createdAt > $1.createdAt }
-    }
-
-    func search(_ query: String, customerName: String) -> [Order] {
-        let base = orders(forCustomer: customerName)
-        guard !query.trimmingCharacters(in: .whitespaces).isEmpty else { return base }
+    func search(_ query: String) -> [Order] {
+        guard !query.trimmingCharacters(in: .whitespaces).isEmpty else { return orders }
         let lower = query.lowercased()
-        return base.filter {
+        return orders.filter {
             $0.folio.lowercased().contains(lower) ||
             $0.restaurantName.lowercased().contains(lower) ||
             $0.lines.contains { $0.productName.lowercased().contains(lower) }
         }
-    }
-
-    // MARK: - Creación
-
-    /// Crea un pedido a partir del carrito y lo agrega al historial.
-    @discardableResult
-    func placeOrder(
-        items: [CartItem],
-        restaurant: Restaurant,
-        customerName: String,
-        paymentMethod: PaymentMethod
-    ) -> Order {
-        let lines = items.map {
-            OrderLine(
-                productName: $0.product.name,
-                quantity: $0.quantity,
-                unitPrice: $0.product.price
-            )
-        }
-        let order = Order(
-            folio: "LSF-\(folioCounter)",
-            restaurantID: restaurant.id,
-            restaurantName: restaurant.name,
-            customerName: customerName,
-            lines: lines,
-            paymentMethod: paymentMethod,
-            status: .pending,
-            pickupCode: Self.randomPickupCode()
-        )
-        folioCounter += 1
-        orders.insert(order, at: 0)
-        return order
-    }
-
-    // MARK: - Administración (dueño)
-
-    func updateStatus(_ order: Order, to status: OrderStatus) {
-        guard let index = orders.firstIndex(where: { $0.id == order.id }) else { return }
-        guard orders[index].status != status else { return }
-        orders[index].status = status
-        notifyCustomerOfStatusChange(orders[index])
-    }
-
-    /// Avisa al alumno cuando el local cambia el estado de su pedido.
-    private func notifyCustomerOfStatusChange(_ order: Order) {
-        let title: String
-        let message: String
-        switch order.status {
-        case .preparing:
-            title = "¡Tu pedido está en preparación!"
-            message = "\(order.restaurantName) ya está preparando tu pedido \(order.folio)."
-        case .ready:
-            title = "¡Tu pedido está listo!"
-            message = "Recoge tu pedido \(order.folio) en \(order.restaurantName). Código: \(order.pickupCode)."
-        case .completed:
-            title = "Pedido entregado"
-            message = "¡Disfruta! Tu pedido \(order.folio) fue entregado."
-        case .cancelled:
-            title = "Pedido cancelado por el local"
-            message = "\(order.restaurantName) canceló tu pedido \(order.folio)."
-        case .pending:
-            return
-        }
-        notifications.insert(
-            AppNotification(
-                audienceID: order.customerName,
-                title: title,
-                message: message,
-                orderFolio: order.folio,
-                iconName: order.status.icon,
-                tintHex: order.status.colorHex
-            ),
-            at: 0
-        )
     }
 
     /// Devuelve la versión vigente de un pedido (refleja cambios del local).
@@ -124,54 +74,179 @@ final class OrderStore: ObservableObject {
         orders.first { $0.id == id }
     }
 
-    // MARK: - Cancelación por el comprador
+    // MARK: - Creación
 
-    /// Cancela un pedido solo si todavía puede cancelarse (sigue pendiente).
-    /// Devuelve `true` si la cancelación se realizó.
+    private struct PlaceOrderParams: Encodable {
+        let pRestaurantID: UUID
+        let pPaymentMethod: PaymentMethod
+        let pItems: [ItemPayload]
+
+        struct ItemPayload: Encodable {
+            let productID: UUID
+            let quantity: Int
+            let notes: String?
+
+            enum CodingKeys: String, CodingKey {
+                case productID = "product_id"
+                case quantity, notes
+            }
+        }
+
+        enum CodingKeys: String, CodingKey {
+            case pRestaurantID = "p_restaurant_id"
+            case pPaymentMethod = "p_payment_method"
+            case pItems = "p_items"
+        }
+    }
+
+    private struct PlacedOrder: Decodable {
+        let id: UUID
+        let folio: String
+        let status: OrderStatus
+        let createdAt: Date
+        let pickupCode: String
+
+        enum CodingKeys: String, CodingKey {
+            case id, folio, status
+            case createdAt = "created_at"
+            case pickupCode = "pickup_code"
+        }
+    }
+
+    /// Crea un pedido a partir del carrito vía `place_order` (folio y código
+    /// de recolección los arma el backend) y lo agrega al historial local.
+    func placeOrder(items: [CartItem], restaurant: Restaurant, paymentMethod: PaymentMethod) async -> Order? {
+        errorMessage = nil
+        isLoading = true
+        defer { isLoading = false }
+        do {
+            let params = PlaceOrderParams(
+                pRestaurantID: restaurant.id,
+                pPaymentMethod: paymentMethod,
+                pItems: items.map {
+                    PlaceOrderParams.ItemPayload(
+                        productID: $0.product.id,
+                        quantity: $0.quantity,
+                        notes: $0.notes.isEmpty ? nil : $0.notes
+                    )
+                }
+            )
+
+            let placed: PlacedOrder = try await client
+                .rpc("place_order", params: params)
+                .execute()
+                .value
+
+            let lines = items.map {
+                OrderLine(
+                    productName: $0.product.name,
+                    quantity: $0.quantity,
+                    unitPrice: $0.product.price,
+                    notes: $0.notes.isEmpty ? nil : $0.notes
+                )
+            }
+
+            let order = Order(
+                id: placed.id,
+                folio: placed.folio,
+                restaurantID: restaurant.id,
+                restaurantName: restaurant.name,
+                lines: lines,
+                paymentMethod: paymentMethod,
+                status: placed.status,
+                createdAt: placed.createdAt,
+                pickupCode: placed.pickupCode
+            )
+            orders.insert(order, at: 0)
+            return order
+        } catch {
+            errorMessage = error.localizedDescription
+            return nil
+        }
+    }
+
+    // MARK: - Administración (dueño)
+
+    private struct UpdateStatusParams: Encodable {
+        let pOrderID: UUID
+        let pNewStatus: OrderStatus
+        enum CodingKeys: String, CodingKey {
+            case pOrderID = "p_order_id"
+            case pNewStatus = "p_new_status"
+        }
+    }
+
+    private struct OrderStatusRow: Decodable {
+        let id: UUID
+        let status: OrderStatus
+    }
+
     @discardableResult
-    func cancelByCustomer(_ order: Order) -> Bool {
-        guard let index = orders.firstIndex(where: { $0.id == order.id }),
-              orders[index].canBeCancelledByCustomer else {
+    func updateStatus(_ order: Order, to status: OrderStatus) async -> Bool {
+        errorMessage = nil
+        do {
+            let updated: OrderStatusRow = try await client
+                .rpc("update_order_status", params: UpdateStatusParams(pOrderID: order.id, pNewStatus: status))
+                .execute()
+                .value
+            if let index = orders.firstIndex(where: { $0.id == updated.id }) {
+                orders[index].status = updated.status
+            }
+            return true
+        } catch {
+            errorMessage = error.localizedDescription
             return false
         }
-        orders[index].status = .cancelled
-
-        let cancelled = orders[index]
-        notifications.insert(
-            AppNotification(
-                audienceID: cancelled.restaurantID.uuidString,
-                title: "Pedido cancelado",
-                message: "\(cancelled.customerName) canceló el pedido \(cancelled.folio).",
-                orderFolio: cancelled.folio,
-                iconName: "xmark.circle.fill",
-                tintHex: OrderStatus.cancelled.colorHex
-            ),
-            at: 0
-        )
-        return true
     }
 
-    // MARK: - Notificaciones (consultas por destinatario)
+    // MARK: - Cancelación por el comprador
 
-    func notifications(forAudience audienceID: String) -> [AppNotification] {
-        notifications
-            .filter { $0.audienceID == audienceID }
-            .sorted { $0.createdAt > $1.createdAt }
+    private struct CancelOrderParams: Encodable {
+        let pOrderID: UUID
+        enum CodingKeys: String, CodingKey { case pOrderID = "p_order_id" }
     }
 
-    func unreadCount(forAudience audienceID: String) -> Int {
-        notifications.filter { $0.audienceID == audienceID && !$0.isRead }.count
-    }
-
-    func markNotificationsRead(forAudience audienceID: String) {
-        for i in notifications.indices where notifications[i].audienceID == audienceID {
-            notifications[i].isRead = true
+    /// Cancela un pedido solo si todavía puede cancelarse (lo valida el backend).
+    /// Devuelve `true` si la cancelación se realizó.
+    @discardableResult
+    func cancelByCustomer(_ order: Order) async -> Bool {
+        errorMessage = nil
+        do {
+            let cancelled: OrderStatusRow = try await client
+                .rpc("cancel_order", params: CancelOrderParams(pOrderID: order.id))
+                .execute()
+                .value
+            if let index = orders.firstIndex(where: { $0.id == cancelled.id }) {
+                orders[index].status = cancelled.status
+            }
+            return true
+        } catch {
+            errorMessage = error.localizedDescription
+            return false
         }
     }
 
-    private static func randomPickupCode() -> String {
-        let letter = "ABCDEFGH".randomElement() ?? "A"
-        let number = Int.random(in: 10...99)
-        return "\(letter)\(number)"
+    // MARK: - Notificaciones
+
+    private struct MarkNotificationReadParams: Encodable {
+        let pNotificationID: UUID
+        enum CodingKeys: String, CodingKey { case pNotificationID = "p_notification_id" }
+    }
+
+    /// Marca como leídos todos los avisos sin leer del usuario activo.
+    func markAllNotificationsRead() async {
+        for notification in notifications where !notification.isRead {
+            do {
+                let updated: AppNotification = try await client
+                    .rpc("mark_notification_read", params: MarkNotificationReadParams(pNotificationID: notification.id))
+                    .execute()
+                    .value
+                if let index = notifications.firstIndex(where: { $0.id == updated.id }) {
+                    notifications[index] = updated
+                }
+            } catch {
+                errorMessage = error.localizedDescription
+            }
+        }
     }
 }

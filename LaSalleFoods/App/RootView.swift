@@ -26,6 +26,9 @@ struct RootView: View {
             }
         }
         .animation(.easeInOut, value: session.role)
+        .task {
+            await session.restoreSession()
+        }
     }
 }
 

@@ -79,6 +79,6 @@ struct ProductRow: View {
 }
 
 #Preview {
-    ProductRow(product: MockData.products[0], quantityInCart: 2) {}
+    ProductRow(product: Product(restaurantID: UUID(), name: "Torta de milanesa", description: "Milanesa de res, aguacate, jitomate y frijoles.", price: 65, category: .mains, symbol: "takeoutbag.and.cup.and.straw.fill", isPopular: true), quantityInCart: 2) {}
         .padding()
 }

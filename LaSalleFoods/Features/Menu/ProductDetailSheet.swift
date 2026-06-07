@@ -84,6 +84,6 @@ struct ProductDetailSheet: View {
 }
 
 #Preview {
-    ProductDetailSheet(product: MockData.products[0])
+    ProductDetailSheet(product: Product(restaurantID: UUID(), name: "Torta de milanesa", description: "Milanesa de res, aguacate, jitomate y frijoles.", price: 65, category: .mains, symbol: "takeoutbag.and.cup.and.straw.fill", isPopular: true))
         .environmentObject(CartStore())
 }

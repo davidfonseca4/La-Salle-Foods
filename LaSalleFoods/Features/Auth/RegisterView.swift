@@ -22,8 +22,9 @@ struct RegisterView: View {
 
     // Datos del local (solo para locatario)
     @State private var localName = ""
-    @State private var localCategory = ""
     @State private var localLocation = ""
+    @State private var categories: [CatalogStore.RestaurantCategory] = []
+    @State private var selectedCategoryID: Int?
 
     @State private var errorMessage: String?
     @State private var isLoading = false
@@ -63,6 +64,9 @@ struct RegisterView: View {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Cancelar") { dismiss() }
                 }
+            }
+            .task {
+                categories = await catalog.loadRestaurantCategories()
             }
         }
     }
@@ -126,7 +130,18 @@ struct RegisterView: View {
                     .foregroundStyle(AppColor.textPrimary)
             }
             LabeledInput(title: "Nombre del local", placeholder: "Ej. Tortas Doña Mary", text: $localName, icon: "tag.fill")
-            LabeledInput(title: "Tipo de comida", placeholder: "Ej. Mexicana · Tortas", text: $localCategory, icon: "fork.knife")
+            VStack(alignment: .leading, spacing: AppSpacing.xs) {
+                Text("Tipo de comida")
+                    .font(AppFont.callout())
+                    .foregroundStyle(AppColor.textSecondary)
+                Picker("Tipo de comida", selection: $selectedCategoryID) {
+                    Text("Selecciona una opción").tag(Int?.none)
+                    ForEach(categories) { category in
+                        Text(category.name).tag(Optional(category.id))
+                    }
+                }
+                .pickerStyle(.menu)
+            }
             LabeledInput(title: "Ubicación en el campus", placeholder: "Ej. Cafetería Central", text: $localLocation, icon: "mappin.and.ellipse")
         }
         .cardStyle()
@@ -143,7 +158,7 @@ struct RegisterView: View {
         guard role == .owner else { return baseValid }
         return baseValid &&
             !localName.trimmingCharacters(in: .whitespaces).isEmpty &&
-            !localCategory.trimmingCharacters(in: .whitespaces).isEmpty &&
+            selectedCategoryID != nil &&
             !localLocation.trimmingCharacters(in: .whitespaces).isEmpty
     }
 
@@ -156,19 +171,21 @@ struct RegisterView: View {
         isLoading = true
 
         Task {
-            try? await Task.sleep(for: .milliseconds(700))
-
-            var restaurantID: UUID?
-            if role == .owner {
-                let restaurant = catalog.addRestaurant(
-                    name: localName,
-                    category: localCategory,
-                    location: localLocation
-                )
-                restaurantID = restaurant.id
+            await session.signUp(name: name, email: email, password: password, role: role)
+            if let error = session.errorMessage {
+                errorMessage = error
+                isLoading = false
+                return
             }
 
-            session.signUp(name: name, email: email, role: role, ownedRestaurantID: restaurantID)
+            if role == .owner {
+                _ = await catalog.addRestaurant(
+                    name: localName,
+                    categoryID: selectedCategoryID!,
+                    location: localLocation
+                )
+            }
+
             isLoading = false
             dismiss()
         }

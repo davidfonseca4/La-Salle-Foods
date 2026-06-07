@@ -151,7 +151,18 @@ struct MenuView: View {
 
 #Preview {
     NavigationStack {
-        MenuView(restaurant: MockData.restaurants[0])
+        MenuView(restaurant: Restaurant(
+            name: "Tortas Doña Mary",
+            category: "Mexicana · Tortas",
+            description: "Las tortas más grandes del campus, recién hechas.",
+            symbol: "takeoutbag.and.cup.and.straw.fill",
+            coverHex: 0xFF7426,
+            rating: 4.8,
+            reviewCount: 320,
+            prepTimeMinutes: 8...12,
+            location: "Cafetería Central",
+            tags: ["Popular", "Sin filas"]
+        ))
             .environmentObject(CatalogStore())
             .environmentObject(CartStore())
     }

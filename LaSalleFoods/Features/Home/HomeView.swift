@@ -39,8 +39,13 @@ struct HomeView: View {
                 }
             }
             .navigationDestination(isPresented: $showNotifications) {
-                NotificationsView(audienceID: customerName)
+                NotificationsView()
             }
+        }
+        .task {
+            await catalog.loadCatalog()
+            await orders.loadOrders()
+            await orders.loadNotifications()
         }
     }
 
@@ -90,12 +95,8 @@ struct HomeView: View {
         session.currentUser?.name.components(separatedBy: " ").first ?? "Alumno"
     }
 
-    private var customerName: String {
-        session.currentUser?.name ?? MockData.studentUser.name
-    }
-
     private var unreadCount: Int {
-        orders.unreadCount(forAudience: customerName)
+        orders.unreadCount
     }
 
     // MARK: - Banner promocional
