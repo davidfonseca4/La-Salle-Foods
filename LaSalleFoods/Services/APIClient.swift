@@ -33,8 +33,8 @@ enum APIError: Error, LocalizedError {
 struct EmptyBody: Encodable {}
 
 enum APIClient {
-    /// Backend Java local (Tomcat). Cambiar para apuntar a producción.
-    static let baseURL = URL(string: "http://localhost:8080/api")!
+    /// Backend Java en Azure Container Apps.
+    static let baseURL = URL(string: "https://lasallefoods-backend.blackbay-608b8ac9.eastus2.azurecontainerapps.io/api")!
 
     // MARK: - Tokens
 
