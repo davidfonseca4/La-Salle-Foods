@@ -4,11 +4,11 @@
 //
 //  Almacena los pedidos visibles para la sesión activa: para el alumno,
 //  su historial; para el dueño, los pedidos recibidos en su local. RLS
-//  ya filtra esto del lado del servidor, así que basta una sola consulta.
+//  ya filtra esto del lado del servidor (vía `/api/orders`), así que
+//  basta una sola consulta.
 //
 
 import SwiftUI
-import Supabase
 
 @MainActor
 final class OrderStore: ObservableObject {
@@ -16,9 +16,6 @@ final class OrderStore: ObservableObject {
     @Published private(set) var notifications: [AppNotification] = []
     @Published var errorMessage: String?
     @Published private(set) var isLoading = false
-
-    private let client = SupabaseManager.client
-    private static let orderSelection = "*, restaurants(name), order_lines(*)"
 
     var unreadCount: Int {
         notifications.filter { !$0.isRead }.count
@@ -33,12 +30,7 @@ final class OrderStore: ObservableObject {
         isLoading = true
         defer { isLoading = false }
         do {
-            orders = try await client
-                .from("orders")
-                .select(Self.orderSelection)
-                .order("created_at", ascending: false)
-                .execute()
-                .value
+            orders = try await APIClient.get("orders")
         } catch {
             errorMessage = error.localizedDescription
         }
@@ -46,12 +38,7 @@ final class OrderStore: ObservableObject {
 
     func loadNotifications() async {
         do {
-            notifications = try await client
-                .from("notifications")
-                .select()
-                .order("created_at", ascending: false)
-                .execute()
-                .value
+            notifications = try await APIClient.get("notifications")
         } catch {
             errorMessage = error.localizedDescription
         }
@@ -113,8 +100,8 @@ final class OrderStore: ObservableObject {
         }
     }
 
-    /// Crea un pedido a partir del carrito vía `place_order` (folio y código
-    /// de recolección los arma el backend) y lo agrega al historial local.
+    /// Crea un pedido a partir del carrito vía `POST /api/orders` (folio y
+    /// código de recolección los arma el backend) y lo agrega al historial local.
     func placeOrder(items: [CartItem], restaurant: Restaurant, paymentMethod: PaymentMethod) async -> Order? {
         errorMessage = nil
         isLoading = true
@@ -132,10 +119,7 @@ final class OrderStore: ObservableObject {
                 }
             )
 
-            let placed: PlacedOrder = try await client
-                .rpc("place_order", params: params)
-                .execute()
-                .value
+            let placed: PlacedOrder = try await APIClient.post("orders", body: params)
 
             let lines = items.map {
                 OrderLine(
@@ -168,10 +152,8 @@ final class OrderStore: ObservableObject {
     // MARK: - Administración (dueño)
 
     private struct UpdateStatusParams: Encodable {
-        let pOrderID: UUID
         let pNewStatus: OrderStatus
         enum CodingKeys: String, CodingKey {
-            case pOrderID = "p_order_id"
             case pNewStatus = "p_new_status"
         }
     }
@@ -185,10 +167,7 @@ final class OrderStore: ObservableObject {
     func updateStatus(_ order: Order, to status: OrderStatus) async -> Bool {
         errorMessage = nil
         do {
-            let updated: OrderStatusRow = try await client
-                .rpc("update_order_status", params: UpdateStatusParams(pOrderID: order.id, pNewStatus: status))
-                .execute()
-                .value
+            let updated: OrderStatusRow = try await APIClient.post("orders/\(order.id)/status", body: UpdateStatusParams(pNewStatus: status))
             if let index = orders.firstIndex(where: { $0.id == updated.id }) {
                 orders[index].status = updated.status
             }
@@ -201,21 +180,13 @@ final class OrderStore: ObservableObject {
 
     // MARK: - Cancelación por el comprador
 
-    private struct CancelOrderParams: Encodable {
-        let pOrderID: UUID
-        enum CodingKeys: String, CodingKey { case pOrderID = "p_order_id" }
-    }
-
     /// Cancela un pedido solo si todavía puede cancelarse (lo valida el backend).
     /// Devuelve `true` si la cancelación se realizó.
     @discardableResult
     func cancelByCustomer(_ order: Order) async -> Bool {
         errorMessage = nil
         do {
-            let cancelled: OrderStatusRow = try await client
-                .rpc("cancel_order", params: CancelOrderParams(pOrderID: order.id))
-                .execute()
-                .value
+            let cancelled: OrderStatusRow = try await APIClient.post("orders/\(order.id)/cancel", body: EmptyBody())
             if let index = orders.firstIndex(where: { $0.id == cancelled.id }) {
                 orders[index].status = cancelled.status
             }
@@ -228,19 +199,11 @@ final class OrderStore: ObservableObject {
 
     // MARK: - Notificaciones
 
-    private struct MarkNotificationReadParams: Encodable {
-        let pNotificationID: UUID
-        enum CodingKeys: String, CodingKey { case pNotificationID = "p_notification_id" }
-    }
-
     /// Marca como leídos todos los avisos sin leer del usuario activo.
     func markAllNotificationsRead() async {
         for notification in notifications where !notification.isRead {
             do {
-                let updated: AppNotification = try await client
-                    .rpc("mark_notification_read", params: MarkNotificationReadParams(pNotificationID: notification.id))
-                    .execute()
-                    .value
+                let updated: AppNotification = try await APIClient.post("notifications/\(notification.id)/read", body: EmptyBody())
                 if let index = notifications.firstIndex(where: { $0.id == updated.id }) {
                     notifications[index] = updated
                 }

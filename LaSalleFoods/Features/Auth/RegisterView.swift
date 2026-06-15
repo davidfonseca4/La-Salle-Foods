@@ -183,11 +183,13 @@ struct RegisterView: View {
             }
 
             if role == .owner {
-                _ = await catalog.addRestaurant(
+                if let restaurant = await catalog.addRestaurant(
                     name: localName,
                     categoryID: selectedCategoryID!,
                     location: localLocation
-                )
+                ) {
+                    session.setOwnedRestaurant(restaurant.id)
+                }
             }
 
             isLoading = false

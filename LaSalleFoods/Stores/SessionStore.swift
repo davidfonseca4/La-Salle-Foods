@@ -2,13 +2,13 @@
 //  SessionStore.swift
 //  LaSalleFoods
 //
-//  Maneja la sesión del usuario (login/logout y rol activo) contra
-//  Supabase Auth. `profiles` guarda nombre y rol; el local de un dueño
-//  se resuelve buscando `restaurants.owner_id`.
+//  Maneja la sesión del usuario (login/logout y rol activo) contra el
+//  backend Java (`/api/auth/*`, `/api/profile`). `profiles` guarda nombre
+//  y rol; el local de un dueño se resuelve buscando `restaurants.owner_id`
+//  vía el proxy genérico `/api/db/...`.
 //
 
 import SwiftUI
-import Supabase
 
 @MainActor
 final class SessionStore: ObservableObject {
@@ -19,13 +19,15 @@ final class SessionStore: ObservableObject {
     var isAuthenticated: Bool { currentUser != nil }
     var role: UserRole? { currentUser?.role }
 
-    private let client = SupabaseManager.client
-
     /// Restaura la sesión activa (si existe) al iniciar la app, para que
     /// el usuario no tenga que volver a iniciar sesión cada vez que la abre.
     func restoreSession() async {
-        guard let session = try? await client.auth.session else { return }
-        await loadProfile(from: session)
+        guard APIClient.refreshToken != nil else { return }
+        guard await APIClient.refreshSession() else {
+            APIClient.clearTokens()
+            return
+        }
+        await loadProfile()
     }
 
     func signIn(email: String, password: String) async {
@@ -33,8 +35,19 @@ final class SessionStore: ObservableObject {
         isLoading = true
         defer { isLoading = false }
         do {
-            let session = try await client.auth.signIn(email: email, password: password)
-            await loadProfile(from: session)
+            struct LoginBody: Encodable { let email: String; let password: String }
+            let session: AuthSession = try await APIClient.post(
+                "auth/login",
+                body: LoginBody(email: email, password: password),
+                authenticated: false
+            )
+            guard let access = session.accessToken, let refresh = session.refreshToken else {
+                errorMessage = "No se pudo iniciar sesión."
+                return
+            }
+            APIClient.accessToken = access
+            APIClient.refreshToken = refresh
+            await loadProfile()
         } catch {
             errorMessage = error.localizedDescription
         }
@@ -49,13 +62,21 @@ final class SessionStore: ObservableObject {
         isLoading = true
         defer { isLoading = false }
         do {
-            let response = try await client.auth.signUp(
+            struct RegisterBody: Encodable {
+                let email: String
+                let password: String
+                let data: [String: String]
+            }
+            let body = RegisterBody(
                 email: email,
                 password: password,
-                data: ["full_name": .string(name), "role": .string(role.rawValue)]
+                data: ["full_name": name, "role": role.rawValue]
             )
-            if let session = response.session {
-                await loadProfile(from: session)
+            let session: AuthSession = try await APIClient.post("auth/register", body: body, authenticated: false)
+            if let access = session.accessToken, let refresh = session.refreshToken {
+                APIClient.accessToken = access
+                APIClient.refreshToken = refresh
+                await loadProfile()
             }
         } catch {
             let description = error.localizedDescription
@@ -68,15 +89,38 @@ final class SessionStore: ObservableObject {
     }
 
     func signOut() async {
-        try? await client.auth.signOut()
+        try? await APIClient.postNoContent("auth/logout", body: EmptyBody())
+        APIClient.clearTokens()
         currentUser = nil
+    }
+
+    /// Actualiza el local asociado a la sesión actual (llamado tras crear el
+    /// local de un dueño recién registrado).
+    func setOwnedRestaurant(_ id: UUID) {
+        currentUser?.ownedRestaurantID = id
+    }
+
+    func updateProfile(fullName: String) async -> Bool {
+        errorMessage = nil
+        do {
+            struct ProfileUpdate: Encodable { let fullName: String
+                enum CodingKeys: String, CodingKey { case fullName = "full_name" }
+            }
+            try await APIClient.patchNoContent("profile", body: ProfileUpdate(fullName: fullName))
+            currentUser?.name = fullName
+            return true
+        } catch {
+            errorMessage = error.localizedDescription
+            return false
+        }
     }
 
     // MARK: - Privado
 
-    private func loadProfile(from session: Session) async {
-        let authUser = session.user
+    private func loadProfile() async {
         do {
+            let authUser: AuthUser = try await APIClient.get("auth/me")
+
             struct ProfileRow: Decodable {
                 let fullName: String
                 let role: UserRole
@@ -87,25 +131,20 @@ final class SessionStore: ObservableObject {
                 }
             }
 
-            let profile: ProfileRow = try await client
-                .from("profiles")
-                .select("full_name, role")
-                .eq("id", value: authUser.id)
-                .single()
-                .execute()
-                .value
+            let profiles: [ProfileRow] = try await APIClient.get("profile")
+            guard let profile = profiles.first else {
+                errorMessage = "No se encontró el perfil."
+                return
+            }
 
             var ownedRestaurantID: UUID?
             if profile.role == .owner {
                 struct RestaurantIDRow: Decodable { let id: UUID }
-                let restaurant: RestaurantIDRow? = try? await client
-                    .from("restaurants")
-                    .select("id")
-                    .eq("owner_id", value: authUser.id)
-                    .single()
-                    .execute()
-                    .value
-                ownedRestaurantID = restaurant?.id
+                let rows: [RestaurantIDRow] = try await APIClient.get("db/restaurants", query: [
+                    URLQueryItem(name: "owner_id", value: "eq.\(authUser.id)"),
+                    URLQueryItem(name: "select", value: "id")
+                ])
+                ownedRestaurantID = rows.first?.id
             }
 
             currentUser = User(

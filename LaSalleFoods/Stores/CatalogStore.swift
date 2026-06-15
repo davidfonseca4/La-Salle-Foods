@@ -3,12 +3,11 @@
 //  LaSalleFoods
 //
 //  Fuente de verdad de locales y productos. Expone operaciones de
-//  consulta para alumnos y de administración (CRUD) para dueños,
-//  todas respaldadas por Supabase (RLS valida los permisos reales).
+//  consulta para alumnos y de administración (CRUD) para dueños contra
+//  el backend Java (`/api/restaurants`, `/api/products`, `/api/db/...`).
 //
 
 import SwiftUI
-import Supabase
 
 @MainActor
 final class CatalogStore: ObservableObject {
@@ -17,28 +16,22 @@ final class CatalogStore: ObservableObject {
     @Published var errorMessage: String?
     @Published private(set) var isLoading = false
 
-    private let client = SupabaseManager.client
+    /// Selección con joins usada por `/api/db/restaurants` para obtener un
+    /// local con su categoría y tags (igual que `GET /api/restaurants`).
+    private static let restaurantSelection = "*,restaurant_categories(name),restaurant_tags(tags(name))"
 
-    private static let restaurantSelection = "*, restaurant_categories(name), restaurant_tags(tags(name))"
-    private static let productSelection = "*, product_categories(name)"
-
-    /// Carga locales y productos visibles según RLS (locales activos y
-    /// productos de locales activos para alumnos; los propios para dueños).
+    /// Carga locales (con categoría y tags) y todos los productos visibles
+    /// según RLS (alumnos ven los de locales activos; dueños, también los
+    /// propios aunque su local esté inactivo).
     func loadCatalog() async {
         errorMessage = nil
         isLoading = true
         defer { isLoading = false }
         do {
-            async let restaurantsTask: [Restaurant] = client
-                .from("restaurants")
-                .select(Self.restaurantSelection)
-                .execute()
-                .value
-            async let productsTask: [Product] = client
-                .from("products")
-                .select(Self.productSelection)
-                .execute()
-                .value
+            async let restaurantsTask: [Restaurant] = APIClient.get("restaurants")
+            async let productsTask: [Product] = APIClient.get("db/products", query: [
+                URLQueryItem(name: "select", value: "*,product_categories(name)")
+            ])
 
             restaurants = try await restaurantsTask
             products = try await productsTask
@@ -76,11 +69,7 @@ final class CatalogStore: ObservableObject {
     }
 
     func loadRestaurantCategories() async -> [RestaurantCategory] {
-        (try? await client
-            .from("restaurant_categories")
-            .select("id, name")
-            .execute()
-            .value) ?? []
+        (try? await APIClient.get("restaurant-categories")) ?? []
     }
 
     // MARK: - Administración (panel de dueño)
@@ -132,15 +121,8 @@ final class CatalogStore: ObservableObject {
                 isPopular: isPopular
             )
 
-            let created: Product = try await client
-                .from("products")
-                .insert(payload)
-                .select(Self.productSelection)
-                .single()
-                .execute()
-                .value
-
-            products.append(created)
+            try await APIClient.postNoContent("products", body: payload)
+            await reloadProducts(for: restaurantID)
         } catch {
             errorMessage = error.localizedDescription
         }
@@ -190,18 +172,8 @@ final class CatalogStore: ObservableObject {
                 isPopular: isPopular
             )
 
-            let updated: Product = try await client
-                .from("products")
-                .update(payload)
-                .eq("id", value: product.id)
-                .select(Self.productSelection)
-                .single()
-                .execute()
-                .value
-
-            if let index = products.firstIndex(where: { $0.id == updated.id }) {
-                products[index] = updated
-            }
+            try await APIClient.patchNoContent("products/\(product.id)", body: payload)
+            await reloadProducts(for: product.restaurantID)
         } catch {
             errorMessage = error.localizedDescription
         }
@@ -210,11 +182,7 @@ final class CatalogStore: ObservableObject {
     func deleteProduct(_ product: Product) async {
         errorMessage = nil
         do {
-            try await client
-                .from("products")
-                .delete()
-                .eq("id", value: product.id)
-                .execute()
+            try await APIClient.delete("products/\(product.id)")
             products.removeAll { $0.id == product.id }
         } catch {
             errorMessage = error.localizedDescription
@@ -229,18 +197,8 @@ final class CatalogStore: ObservableObject {
                 enum CodingKeys: String, CodingKey { case isAvailable = "is_available" }
             }
 
-            let updated: Product = try await client
-                .from("products")
-                .update(AvailabilityUpdate(isAvailable: !product.isAvailable))
-                .eq("id", value: product.id)
-                .select(Self.productSelection)
-                .single()
-                .execute()
-                .value
-
-            if let index = products.firstIndex(where: { $0.id == updated.id }) {
-                products[index] = updated
-            }
+            try await APIClient.patchNoContent("products/\(product.id)", body: AvailabilityUpdate(isAvailable: !product.isAvailable))
+            await reloadProducts(for: product.restaurantID)
         } catch {
             errorMessage = error.localizedDescription
         }
@@ -257,7 +215,7 @@ final class CatalogStore: ObservableObject {
     ) async -> Restaurant? {
         errorMessage = nil
         do {
-            let ownerID = try await client.auth.session.user.id
+            let me: AuthUser = try await APIClient.get("auth/me")
 
             struct NewRestaurant: Encodable {
                 let ownerID: UUID
@@ -279,7 +237,7 @@ final class CatalogStore: ObservableObject {
             }
 
             let payload = NewRestaurant(
-                ownerID: ownerID,
+                ownerID: me.id,
                 categoryID: categoryID,
                 name: name,
                 description: "Nuevo local en el campus.",
@@ -289,16 +247,17 @@ final class CatalogStore: ObservableObject {
                 prepTimeMax: 15
             )
 
-            let created: Restaurant = try await client
-                .from("restaurants")
-                .insert(payload)
-                .select(Self.restaurantSelection)
-                .single()
-                .execute()
-                .value
+            try await APIClient.postNoContent("restaurants", body: payload)
 
-            restaurants.insert(created, at: 0)
-            return created
+            // El POST no devuelve el registro creado (sin `Prefer:
+            // return=representation`); se vuelve a consultar por owner_id.
+            let created: [Restaurant] = try await APIClient.get("db/restaurants", query: [
+                URLQueryItem(name: "owner_id", value: "eq.\(me.id)"),
+                URLQueryItem(name: "select", value: Self.restaurantSelection)
+            ])
+            guard let restaurant = created.first else { return nil }
+            restaurants.insert(restaurant, at: 0)
+            return restaurant
         } catch {
             errorMessage = error.localizedDescription
             return nil
@@ -307,15 +266,15 @@ final class CatalogStore: ObservableObject {
 
     // MARK: - Privado
 
+    private func reloadProducts(for restaurantID: UUID) async {
+        guard let fresh: [Product] = try? await APIClient.get("restaurants/\(restaurantID)/products") else { return }
+        products.removeAll { $0.restaurantID == restaurantID }
+        products.append(contentsOf: fresh)
+    }
+
     private func categoryID(forName name: String) async throws -> Int? {
-        struct CategoryRow: Decodable { let id: Int }
-        let row: CategoryRow? = try await client
-            .from("product_categories")
-            .select("id")
-            .eq("name", value: name)
-            .single()
-            .execute()
-            .value
-        return row?.id
+        struct CategoryRow: Decodable { let id: Int; let name: String }
+        let rows: [CategoryRow] = try await APIClient.get("product-categories")
+        return rows.first { $0.name == name }?.id
     }
 }

@@ -1,0 +1,13 @@
+/app/src/main/java/mx/lasalle/lasallefoods/config/SupabaseConfig.java
+/app/src/main/java/mx/lasalle/lasallefoods/filters/LoggingFilter.java
+/app/src/main/java/mx/lasalle/lasallefoods/http/ProxyResponse.java
+/app/src/main/java/mx/lasalle/lasallefoods/http/SupabaseGateway.java
+/app/src/main/java/mx/lasalle/lasallefoods/servlets/AuthServlet.java
+/app/src/main/java/mx/lasalle/lasallefoods/servlets/CatalogServlet.java
+/app/src/main/java/mx/lasalle/lasallefoods/servlets/HealthServlet.java
+/app/src/main/java/mx/lasalle/lasallefoods/servlets/NotificationServlet.java
+/app/src/main/java/mx/lasalle/lasallefoods/servlets/OrderServlet.java
+/app/src/main/java/mx/lasalle/lasallefoods/servlets/ProductServlet.java
+/app/src/main/java/mx/lasalle/lasallefoods/servlets/ProfileServlet.java
+/app/src/main/java/mx/lasalle/lasallefoods/servlets/RestProxyServlet.java
+/app/src/main/java/mx/lasalle/lasallefoods/servlets/RestaurantServlet.java

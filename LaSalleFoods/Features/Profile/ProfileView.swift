@@ -112,6 +112,8 @@ struct ProfileView: View {
 
 private struct PersonalDataView: View {
     @EnvironmentObject private var session: SessionStore
+    @State private var isEditingName = false
+    @State private var nameInput = ""
 
     var body: some View {
         ScrollView {
@@ -123,11 +125,21 @@ private struct PersonalDataView: View {
         .background(AppColor.background.ignoresSafeArea())
         .navigationTitle("Datos personales")
         .navigationBarTitleDisplayMode(.inline)
+        .alert("Editar nombre", isPresented: $isEditingName) {
+            TextField("Nombre completo", text: $nameInput)
+            Button("Cancelar", role: .cancel) {}
+            Button("Guardar") {
+                Task { await session.updateProfile(fullName: nameInput) }
+            }
+        }
     }
 
     private var infoCard: some View {
         VStack(spacing: 0) {
-            infoRow(icon: "person.fill", title: "Nombre", value: session.currentUser?.name ?? "—")
+            infoRow(icon: "person.fill", title: "Nombre", value: session.currentUser?.name ?? "—") {
+                nameInput = session.currentUser?.name ?? ""
+                isEditingName = true
+            }
             Divider()
             infoRow(icon: "envelope.fill", title: "Correo", value: session.currentUser?.email ?? "—")
             Divider()
@@ -136,7 +148,7 @@ private struct PersonalDataView: View {
         .cardStyle(padding: 0)
     }
 
-    private func infoRow(icon: String, title: String, value: String) -> some View {
+    private func infoRow(icon: String, title: String, value: String, onEdit: (() -> Void)? = nil) -> some View {
         HStack(spacing: AppSpacing.md) {
             Image(systemName: icon)
                 .foregroundStyle(AppColor.orange)
@@ -149,6 +161,14 @@ private struct PersonalDataView: View {
                 .font(AppFont.subheadline())
                 .foregroundStyle(AppColor.textSecondary)
                 .multilineTextAlignment(.trailing)
+            if let onEdit {
+                Button(action: onEdit) {
+                    Image(systemName: "pencil")
+                        .font(.system(size: 13, weight: .semibold))
+                        .foregroundStyle(AppColor.orange)
+                }
+                .buttonStyle(.plain)
+            }
         }
         .padding(AppSpacing.md)
     }
