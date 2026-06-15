@@ -12,6 +12,7 @@ struct OrderDetailView: View {
     let order: Order
     @EnvironmentObject private var orders: OrderStore
     @State private var showCancelConfirm = false
+    @State private var showCancelError = false
 
     /// Versión vigente del pedido tomada del store, para reflejar en vivo
     /// los cambios de estado que haga el local.
@@ -41,11 +42,20 @@ struct OrderDetailView: View {
             titleVisibility: .visible
         ) {
             Button("Sí, cancelar pedido", role: .destructive) {
-                Task { await orders.cancelByCustomer(current) }
+                Task {
+                    if !(await orders.cancelByCustomer(current)) {
+                        showCancelError = true
+                    }
+                }
             }
             Button("No, mantener", role: .cancel) {}
         } message: {
             Text("Solo puedes cancelar mientras el local no haya comenzado a prepararlo.")
+        }
+        .alert("No se pudo cancelar el pedido", isPresented: $showCancelError) {
+            Button("OK", role: .cancel) {}
+        } message: {
+            Text(orders.errorMessage ?? "Ocurrió un error inesperado.")
         }
     }
 

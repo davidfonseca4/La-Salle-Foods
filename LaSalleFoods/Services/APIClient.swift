@@ -22,15 +22,38 @@ enum APIError: Error, LocalizedError {
         case .server(_, let message): return message
         case .decoding: return "No se pudo leer la respuesta del servidor."
         case .encoding: return "No se pudo preparar la solicitud."
-        case .network(let error): return error.localizedDescription
+        case .network(let error): return networkErrorMessage(error)
         case .unauthorized: return "Tu sesión expiró. Vuelve a iniciar sesión."
         case .invalidResponse: return "Respuesta inválida del servidor."
         }
     }
 }
 
+/// Traduce errores comunes de `URLSession` (sin conexión, timeout) a
+/// mensajes en español; el resto cae a un mensaje genérico.
+private func networkErrorMessage(_ error: Error) -> String {
+    let nsError = error as NSError
+    guard nsError.domain == NSURLErrorDomain else {
+        return "No se pudo conectar con el servidor. Intenta de nuevo."
+    }
+    switch nsError.code {
+    case NSURLErrorNotConnectedToInternet, NSURLErrorNetworkConnectionLost:
+        return "Sin conexión a internet. Revisa tu red e intenta de nuevo."
+    case NSURLErrorTimedOut:
+        return "La solicitud tardó demasiado. Intenta de nuevo."
+    default:
+        return "No se pudo conectar con el servidor. Intenta de nuevo."
+    }
+}
+
 /// Body vacío para endpoints que ignoran el contenido (cancel, mark-read, logout).
 struct EmptyBody: Encodable {}
+
+extension Notification.Name {
+    /// Se emite cuando el refresh token ya no es válido (401 sin recuperación),
+    /// para que `SessionStore` cierre la sesión y regrese a Login.
+    static let sessionExpired = Notification.Name("sessionExpired")
+}
 
 enum APIClient {
     /// Backend Java en Azure Container Apps.
@@ -132,6 +155,7 @@ enum APIClient {
         if response.statusCode == 401 && authenticated {
             guard await refreshSession() else {
                 clearTokens()
+                NotificationCenter.default.post(name: .sessionExpired, object: nil)
                 throw APIError.unauthorized
             }
             let (retryData, retryResponse) = try await perform(path: path, method: method, query: query, bodyData: bodyData, authenticated: authenticated)
@@ -185,6 +209,9 @@ enum APIClient {
 
     private static func serverErrorMessage(from data: Data) -> String {
         if let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
+            if let code = json["code"] as? String, let friendly = friendlyMessage(forCode: code) {
+                return friendly
+            }
             if let message = json["error_description"] as? String { return message }
             if let message = json["msg"] as? String { return message }
             if let message = json["message"] as? String { return message }
@@ -192,6 +219,24 @@ enum APIClient {
         return String(data: data, encoding: .utf8)?.isEmpty == false
             ? String(data: data, encoding: .utf8)!
             : "Ocurrió un error inesperado."
+    }
+
+    /// Traduce códigos de error de Postgres/PostgREST a mensajes en español
+    /// para el usuario final. `P0001` (RAISE EXCEPTION en funciones propias)
+    /// ya viene en español natural, así que se deja pasar sin tocar.
+    private static func friendlyMessage(forCode code: String) -> String? {
+        switch code {
+        case "P0001":
+            return nil
+        case "23505":
+            return "Ya existe un registro con esos datos."
+        case "42501":
+            return "No tienes permiso para realizar esta acción."
+        case "23502", "23514", "23503":
+            return "Datos inválidos, revisa la información ingresada."
+        default:
+            return code.hasPrefix("PGRST") ? "Error de comunicación con el servidor." : nil
+        }
     }
 
     /// Pide un nuevo `access_token`/`refresh_token` con el `refresh_token`

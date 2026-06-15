@@ -16,6 +16,7 @@ struct AdminDashboardView: View {
 
     @State private var productFormMode: ProductFormView.Mode?
     @State private var productToDelete: Product?
+    @State private var showStatusError = false
 
     var body: some View {
         NavigationStack {
@@ -87,6 +88,11 @@ struct AdminDashboardView: View {
             } message: { product in
                 Text(product.name)
             }
+            .alert("No se pudo actualizar el pedido", isPresented: $showStatusError) {
+                Button("OK", role: .cancel) {}
+            } message: {
+                Text(orders.errorMessage ?? "Ocurrió un error inesperado.")
+            }
         }
     }
 
@@ -137,7 +143,11 @@ struct AdminDashboardView: View {
             } else {
                 ForEach(received) { order in
                     AdminOrderRow(order: order) { newStatus in
-                        Task { await orders.updateStatus(order, to: newStatus) }
+                        Task {
+                            if !(await orders.updateStatus(order, to: newStatus)) {
+                                showStatusError = true
+                            }
+                        }
                     }
                 }
             }

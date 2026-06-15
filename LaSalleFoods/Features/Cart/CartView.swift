@@ -16,6 +16,7 @@ struct CartView: View {
 
     @State private var paymentMethod: PaymentMethod = .cash
     @State private var placedOrder: Order?
+    @State private var showErrorAlert = false
 
     var body: some View {
         Group {
@@ -34,6 +35,11 @@ struct CartView: View {
         .background(AppColor.background.ignoresSafeArea())
         .fullScreenCover(item: $placedOrder) { order in
             OrderConfirmationView(order: order)
+        }
+        .alert("No se pudo confirmar el pedido", isPresented: $showErrorAlert) {
+            Button("OK", role: .cancel) {}
+        } message: {
+            Text(orders.errorMessage ?? "Ocurrió un error inesperado.")
         }
     }
 
@@ -148,6 +154,8 @@ struct CartView: View {
             if let order = await orders.placeOrder(items: cart.items, restaurant: restaurant, paymentMethod: paymentMethod) {
                 cart.clear()
                 placedOrder = order
+            } else {
+                showErrorAlert = true
             }
         }
     }

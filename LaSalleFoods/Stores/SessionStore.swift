@@ -19,6 +19,27 @@ final class SessionStore: ObservableObject {
     var isAuthenticated: Bool { currentUser != nil }
     var role: UserRole? { currentUser?.role }
 
+    private var sessionExpiredObserver: NSObjectProtocol?
+
+    init() {
+        sessionExpiredObserver = NotificationCenter.default.addObserver(
+            forName: .sessionExpired,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            Task { @MainActor [weak self] in
+                self?.currentUser = nil
+                self?.errorMessage = "Tu sesión expiró. Vuelve a iniciar sesión."
+            }
+        }
+    }
+
+    deinit {
+        if let sessionExpiredObserver {
+            NotificationCenter.default.removeObserver(sessionExpiredObserver)
+        }
+    }
+
     /// Restaura la sesión activa (si existe) al iniciar la app, para que
     /// el usuario no tenga que volver a iniciar sesión cada vez que la abre.
     func restoreSession() async {
