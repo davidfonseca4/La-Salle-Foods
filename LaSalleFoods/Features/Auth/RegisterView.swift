@@ -151,7 +151,7 @@ struct RegisterView: View {
 
     private var isFormValid: Bool {
         let baseValid = !name.trimmingCharacters(in: .whitespaces).isEmpty &&
-            email.contains("@") &&
+            email.isInstitutionalEmail &&
             password.count >= 4 &&
             password == confirmPassword
 
@@ -164,7 +164,11 @@ struct RegisterView: View {
 
     private func register() {
         guard isFormValid else {
-            errorMessage = "Revisa los datos: el correo debe ser válido y las contraseñas deben coincidir."
+            if !email.isInstitutionalEmail {
+                errorMessage = "Usa tu correo institucional @lasallebajio.edu.mx"
+            } else {
+                errorMessage = "Revisa los datos: las contraseñas deben coincidir y la contraseña debe tener al menos 4 caracteres."
+            }
             return
         }
         errorMessage = nil

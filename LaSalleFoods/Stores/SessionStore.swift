@@ -58,7 +58,12 @@ final class SessionStore: ObservableObject {
                 await loadProfile(from: session)
             }
         } catch {
-            errorMessage = error.localizedDescription
+            let description = error.localizedDescription
+            if description.contains("Database error saving new user") {
+                errorMessage = "Usa tu correo institucional @lasallebajio.edu.mx"
+            } else {
+                errorMessage = description
+            }
         }
     }
 
