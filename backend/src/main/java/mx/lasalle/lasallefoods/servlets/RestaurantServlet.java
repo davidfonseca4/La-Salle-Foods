@@ -59,7 +59,7 @@ public class RestaurantServlet extends HttpServlet {
         ProxyResponse upstream;
         if (segments.length == 0 || segments[0].isEmpty()) {
             upstream = gateway.forward("GET", "/rest/v1/restaurants",
-                    "select=*,restaurant_categories(name),restaurant_tags(tags(name))&is_active=eq.true",
+                    "select=*,restaurant_categories(name),restaurant_tags(tags(name))",
                     auth, null, null);
         } else if (segments.length == 1) {
             String id = segments[0];
