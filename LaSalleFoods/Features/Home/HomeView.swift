@@ -30,6 +30,7 @@ struct HomeView: View {
                 .padding(.bottom, AppSpacing.xl)
             }
             .background(AppColor.background.ignoresSafeArea())
+            .refreshable { await catalog.loadCatalog() }
             .navigationDestination(for: Restaurant.self) { restaurant in
                 MenuView(restaurant: restaurant)
             }
