@@ -37,7 +37,11 @@ struct NotificationsView: View {
         .background(AppColor.background.ignoresSafeArea())
         .navigationTitle("Notificaciones")
         .navigationBarTitleDisplayMode(.inline)
-        .task { await orders.markAllNotificationsRead() }
+        .task {
+            await orders.loadNotifications()
+            await orders.markAllNotificationsRead()
+        }
+        .refreshable { await orders.loadNotifications() }
     }
 }
 
