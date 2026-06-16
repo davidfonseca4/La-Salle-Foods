@@ -167,7 +167,8 @@ final class OrderStore: ObservableObject {
     func updateStatus(_ order: Order, to status: OrderStatus) async -> Bool {
         errorMessage = nil
         do {
-            let updated: OrderStatusRow = try await APIClient.post("orders/\(order.id)/status", body: UpdateStatusParams(pNewStatus: status))
+            let rows: [OrderStatusRow] = try await APIClient.post("orders/\(order.id)/status", body: UpdateStatusParams(pNewStatus: status))
+            guard let updated = rows.first else { throw APIError.invalidResponse }
             if let index = orders.firstIndex(where: { $0.id == updated.id }) {
                 orders[index].status = updated.status
             }
@@ -186,7 +187,8 @@ final class OrderStore: ObservableObject {
     func cancelByCustomer(_ order: Order) async -> Bool {
         errorMessage = nil
         do {
-            let cancelled: OrderStatusRow = try await APIClient.post("orders/\(order.id)/cancel", body: EmptyBody())
+            let rows: [OrderStatusRow] = try await APIClient.post("orders/\(order.id)/cancel", body: EmptyBody())
+            guard let cancelled = rows.first else { throw APIError.invalidResponse }
             if let index = orders.firstIndex(where: { $0.id == cancelled.id }) {
                 orders[index].status = cancelled.status
             }
