@@ -31,12 +31,12 @@ final class OrderStore: ObservableObject {
     /// Trae los pedidos visibles para el usuario activo (RLS decide si son
     /// los propios del alumno o los recibidos por el local del dueño).
     func loadOrders() async {
-        orders = []
         errorMessage = nil
         isLoading = true
         defer { isLoading = false }
         do {
-            orders = try await APIClient.get("orders")
+            let fetched: [Order] = try await APIClient.get("orders")
+            orders = fetched
         } catch {
             errorMessage = error.localizedDescription
         }

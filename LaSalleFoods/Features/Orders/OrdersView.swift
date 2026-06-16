@@ -51,7 +51,12 @@ struct OrdersView: View {
                 .padding(.bottom, AppSpacing.xl)
             }
             .background(AppColor.background.ignoresSafeArea())
-            .task { await orders.loadOrders() }
+            .task {
+                    while !Task.isCancelled {
+                        await orders.loadOrders()
+                        try? await Task.sleep(for: .seconds(30))
+                    }
+                }
             .refreshable { await orders.loadOrders() }
             .navigationTitle("Mis pedidos")
             .navigationDestination(for: Order.self) { order in
