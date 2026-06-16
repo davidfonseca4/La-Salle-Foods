@@ -23,9 +23,15 @@ final class OrderStore: ObservableObject {
 
     // MARK: - Carga
 
+    func clear() {
+        orders = []
+        notifications = []
+    }
+
     /// Trae los pedidos visibles para el usuario activo (RLS decide si son
     /// los propios del alumno o los recibidos por el local del dueño).
     func loadOrders() async {
+        orders = []
         errorMessage = nil
         isLoading = true
         defer { isLoading = false }

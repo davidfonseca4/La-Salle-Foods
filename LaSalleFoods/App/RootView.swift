@@ -10,6 +10,7 @@ import SwiftUI
 
 struct RootView: View {
     @EnvironmentObject private var session: SessionStore
+    @EnvironmentObject private var orders: OrderStore
 
     var body: some View {
         Group {
@@ -28,6 +29,11 @@ struct RootView: View {
         .animation(.easeInOut, value: session.role)
         .task {
             await session.restoreSession()
+        }
+        .onChange(of: session.isAuthenticated) { _, isAuthenticated in
+            if !isAuthenticated {
+                orders.clear()
+            }
         }
     }
 }
