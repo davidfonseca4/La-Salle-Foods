@@ -189,6 +189,10 @@ struct RegisterView: View {
                     location: localLocation
                 ) {
                     session.setOwnedRestaurant(restaurant.id)
+                } else {
+                    errorMessage = catalog.errorMessage ?? "No se pudo crear el local. Intenta de nuevo."
+                    isLoading = false
+                    return
                 }
             }
 

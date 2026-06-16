@@ -251,10 +251,17 @@ final class CatalogStore: ObservableObject {
 
             // El POST no devuelve el registro creado (sin `Prefer:
             // return=representation`); se vuelve a consultar por owner_id.
-            let created: [Restaurant] = try await APIClient.get("db/restaurants", query: [
+            // Retry once: Java backend may write async, so the first GET
+            // can race and return [] even when the insert succeeded.
+            let query = [
                 URLQueryItem(name: "owner_id", value: "eq.\(me.id)"),
                 URLQueryItem(name: "select", value: Self.restaurantSelection)
-            ])
+            ]
+            var created: [Restaurant] = try await APIClient.get("db/restaurants", query: query)
+            if created.isEmpty {
+                try await Task.sleep(for: .milliseconds(600))
+                created = try await APIClient.get("db/restaurants", query: query)
+            }
             guard let restaurant = created.first else { return nil }
             restaurants.insert(restaurant, at: 0)
             return restaurant
