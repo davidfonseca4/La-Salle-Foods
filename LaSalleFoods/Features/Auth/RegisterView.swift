@@ -112,7 +112,7 @@ struct RegisterView: View {
         VStack(spacing: AppSpacing.md) {
             LabeledInput(title: "Nombre completo", placeholder: "Tu nombre", text: $name, icon: "person.fill")
             LabeledInput(title: "Correo institucional", placeholder: "tucorreo@lasalle.edu.mx", text: $email, icon: "envelope.fill", keyboard: .emailAddress)
-            LabeledInput(title: "Contraseña", placeholder: "Mínimo 4 caracteres", text: $password, icon: "lock.fill", isSecure: true)
+            LabeledInput(title: "Contraseña", placeholder: "Mínimo 6 caracteres", text: $password, icon: "lock.fill", isSecure: true)
             LabeledInput(title: "Confirmar contraseña", placeholder: "Repite tu contraseña", text: $confirmPassword, icon: "lock.rotation", isSecure: true)
         }
         .cardStyle()
@@ -152,7 +152,7 @@ struct RegisterView: View {
     private var isFormValid: Bool {
         let baseValid = !name.trimmingCharacters(in: .whitespaces).isEmpty &&
             email.isInstitutionalEmail &&
-            password.count >= 4 &&
+            password.count >= 6 &&
             password == confirmPassword
 
         guard role == .owner else { return baseValid }
@@ -167,7 +167,7 @@ struct RegisterView: View {
             if !email.isInstitutionalEmail {
                 errorMessage = "Usa tu correo institucional @lasallebajio.edu.mx"
             } else {
-                errorMessage = "Revisa los datos: las contraseñas deben coincidir y la contraseña debe tener al menos 4 caracteres."
+                errorMessage = "Revisa los datos: las contraseñas deben coincidir y la contraseña debe tener al menos 6 caracteres."
             }
             return
         }

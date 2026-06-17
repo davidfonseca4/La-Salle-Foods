@@ -15,12 +15,12 @@ final class LoginViewModel: ObservableObject {
     @Published var password: String = ""
 
     var isFormValid: Bool {
-        email.contains("@") && password.count >= 4
+        email.contains("@") && password.count >= 6
     }
 
     func signIn(using session: SessionStore) {
         guard isFormValid else {
-            session.errorMessage = "Ingresa un correo válido y una contraseña de al menos 4 caracteres."
+            session.errorMessage = "Ingresa un correo válido y una contraseña de al menos 6 caracteres."
             return
         }
         Task { await session.signIn(email: email, password: password) }

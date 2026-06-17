@@ -32,8 +32,8 @@ public final class AuthRepository {
             throw ApiException.badRequest(
                     "Usa tu correo institucional " + AppConfig.institutionalDomain());
         }
-        if (password == null || password.length() < 4) {
-            throw ApiException.badRequest("La contraseña debe tener al menos 4 caracteres.");
+        if (password == null || password.length() < 6) {
+            throw ApiException.badRequest("La contraseña debe tener al menos 6 caracteres.");
         }
         if (fullName == null || fullName.isBlank()) {
             throw ApiException.badRequest("El nombre es obligatorio.");
