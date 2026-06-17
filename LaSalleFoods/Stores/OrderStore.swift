@@ -207,14 +207,15 @@ final class OrderStore: ObservableObject {
 
     /// Marca como leídos todos los avisos sin leer del usuario activo.
     func markAllNotificationsRead() async {
-        for notification in notifications where !notification.isRead {
+        let unread = notifications.filter { !$0.isRead }
+        for notification in unread {
             do {
-                let updated: AppNotification = try await APIClient.post("notifications/\(notification.id)/read", body: EmptyBody())
-                if let index = notifications.firstIndex(where: { $0.id == updated.id }) {
-                    notifications[index] = updated
+                try await APIClient.postNoContent("notifications/\(notification.id)/read", body: EmptyBody())
+                if let index = notifications.firstIndex(where: { $0.id == notification.id }) {
+                    notifications[index].isRead = true
                 }
             } catch {
-                errorMessage = error.localizedDescription
+                // Fallo silencioso por notificación individual — el badge se corrige en el próximo loadNotifications()
             }
         }
     }

@@ -42,10 +42,14 @@ struct AdminDashboardView: View {
             .task {
                 while !Task.isCancelled {
                     await orders.loadOrders()
+                    await orders.loadNotifications()
                     try? await Task.sleep(for: .seconds(30))
                 }
             }
-            .refreshable { await orders.loadOrders() }
+            .refreshable {
+                await orders.loadOrders()
+                await orders.loadNotifications()
+            }
             .navigationTitle("Panel del local")
             .toolbar {
                 ToolbarItem(placement: .topBarLeading) {
@@ -217,16 +221,21 @@ private struct AdminNotificationRow: View {
     let notification: AppNotification
 
     var body: some View {
-        HStack(spacing: AppSpacing.sm) {
-            Image(systemName: notification.iconName)
-                .font(.system(size: 22))
-                .foregroundStyle(Color(hex: notification.tintHex))
+        HStack(alignment: .top, spacing: AppSpacing.sm) {
+            ZStack {
+                Circle()
+                    .fill(Color(hex: notification.tintHex).opacity(0.14))
+                    .frame(width: 40, height: 40)
+                Image(systemName: notification.iconName)
+                    .font(.system(size: 18))
+                    .foregroundStyle(Color(hex: notification.tintHex))
+            }
             VStack(alignment: .leading, spacing: 2) {
                 Text(notification.title)
                     .font(AppFont.callout())
                     .foregroundStyle(AppColor.textPrimary)
                 Text(notification.message)
-                    .font(AppFont.caption())
+                    .font(AppFont.subheadline())
                     .foregroundStyle(AppColor.textSecondary)
                 Text(notification.createdAt.formatted(date: .abbreviated, time: .shortened))
                     .font(AppFont.caption())
@@ -237,6 +246,7 @@ private struct AdminNotificationRow: View {
                 Circle()
                     .fill(AppColor.orange)
                     .frame(width: 8, height: 8)
+                    .padding(.top, 6)
             }
         }
         .cardStyle(padding: AppSpacing.sm)

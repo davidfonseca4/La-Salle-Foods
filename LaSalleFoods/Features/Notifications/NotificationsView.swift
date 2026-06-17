@@ -43,6 +43,7 @@ struct NotificationsView: View {
             while !Task.isCancelled {
                 try? await Task.sleep(for: .seconds(60))
                 await orders.loadNotifications()
+                await orders.markAllNotificationsRead()
             }
         }
         .refreshable { await orders.loadNotifications() }
