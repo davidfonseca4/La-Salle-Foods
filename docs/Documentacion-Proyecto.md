@@ -9,7 +9,7 @@
 Aplicación de gestión móvil (iOS) — Giro: pedidos y recolección en cafeterías universitarias
 
 **Fecha de entrega:** 17 de junio de 2026
-**Repositorio:** https://github.com/dxvm0n/La-Salle-Foods
+**Repositorio:** https://github.com/davidfonseca4/La-Salle-Foods
 
 </div>
 
@@ -222,5 +222,5 @@ backend desplegado en Azure por defecto.
 
 ## 10. Enlaces
 
-- **Repositorio:** https://github.com/dxvm0n/La-Salle-Foods
+- **Repositorio:** https://github.com/davidfonseca4/La-Salle-Foods
 - **Backend (nube):** https://lasallefoods-backend.whiteforest-7f031d41.westus2.azurecontainerapps.io/api
