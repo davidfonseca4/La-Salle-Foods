@@ -77,11 +77,8 @@ struct AdminDashboardView: View {
                     }
                 }
             }
-            .sheet(item: Binding(
-                get: { productFormMode.map { FormModeWrapper(mode: $0) } },
-                set: { productFormMode = $0?.mode }
-            )) { wrapper in
-                ProductFormView(mode: wrapper.mode)
+            .sheet(item: $productFormMode) { mode in
+                ProductFormView(mode: mode)
             }
             .confirmationDialog(
                 "¿Eliminar este producto?",
@@ -227,13 +224,6 @@ struct AdminDashboardView: View {
             }
         }
     }
-}
-
-// MARK: - Wrapper para presentar el sheet con enum
-
-private struct FormModeWrapper: Identifiable {
-    let id = UUID()
-    let mode: ProductFormView.Mode
 }
 
 // MARK: - Tarjeta de estadística

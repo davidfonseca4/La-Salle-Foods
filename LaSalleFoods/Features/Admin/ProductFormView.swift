@@ -8,9 +8,19 @@
 import SwiftUI
 
 struct ProductFormView: View {
-    enum Mode {
+    enum Mode: Identifiable {
         case create(restaurantID: UUID)
         case edit(Product)
+
+        /// Identificador estable para `.sheet(item:)` (no regenerar UUID en cada render).
+        var id: String {
+            switch self {
+            case .create(let restaurantID):
+                return "create-\(restaurantID.uuidString)"
+            case .edit(let product):
+                return "edit-\(product.id.uuidString)"
+            }
+        }
 
         var title: String {
             switch self {
