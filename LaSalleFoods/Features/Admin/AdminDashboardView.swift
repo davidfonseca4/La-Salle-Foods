@@ -40,6 +40,7 @@ struct AdminDashboardView: View {
             }
             .background(AppColor.background.ignoresSafeArea())
             .task {
+                await catalog.loadCatalog()
                 while !Task.isCancelled {
                     await orders.loadOrders()
                     await orders.loadNotifications()
@@ -153,13 +154,19 @@ struct AdminDashboardView: View {
                     .padding(.vertical, AppSpacing.sm)
             } else {
                 ForEach(received) { order in
-                    AdminOrderRow(order: order) { newStatus in
+                    AdminOrderRow(order: order, onStatusChange: { newStatus in
                         Task {
                             if !(await orders.updateStatus(order, to: newStatus)) {
                                 showStatusError = true
                             }
                         }
-                    }
+                    }, onCancel: {
+                        Task {
+                            if !(await orders.cancelByCustomer(order)) {
+                                showStatusError = true
+                            }
+                        }
+                    })
                 }
             }
         }
@@ -305,6 +312,7 @@ private struct AdminProductRow: View {
 private struct AdminOrderRow: View {
     let order: Order
     let onStatusChange: (OrderStatus) -> Void
+    let onCancel: () -> Void
 
     var body: some View {
         VStack(alignment: .leading, spacing: AppSpacing.sm) {
@@ -328,20 +336,33 @@ private struct AdminOrderRow: View {
                 .foregroundStyle(AppColor.textSecondary)
                 .lineLimit(2)
 
-            Menu {
-                ForEach(OrderStatus.allCases) { status in
-                    Button {
-                        onStatusChange(status)
-                    } label: {
-                        Label(status.rawValue, systemImage: status.icon)
+            HStack(spacing: AppSpacing.sm) {
+                Menu {
+                    ForEach(OrderStatus.allCases.filter { $0 != .cancelled }) { status in
+                        Button {
+                            onStatusChange(status)
+                        } label: {
+                            Label(status.rawValue, systemImage: status.icon)
+                        }
+                    }
+                } label: {
+                    HStack {
+                        StatusBadge(status: order.status)
+                        Image(systemName: "chevron.down")
+                            .font(.system(size: 11, weight: .bold))
+                            .foregroundStyle(AppColor.textSecondary)
                     }
                 }
-            } label: {
-                HStack {
-                    StatusBadge(status: order.status)
-                    Image(systemName: "chevron.down")
-                        .font(.system(size: 11, weight: .bold))
-                        .foregroundStyle(AppColor.textSecondary)
+
+                if order.status == .pending {
+                    Button(role: .destructive) {
+                        onCancel()
+                    } label: {
+                        Label("Cancelar pedido", systemImage: "xmark.circle.fill")
+                            .font(AppFont.caption())
+                            .foregroundStyle(AppColor.danger)
+                    }
+                    .buttonStyle(.plain)
                 }
             }
         }

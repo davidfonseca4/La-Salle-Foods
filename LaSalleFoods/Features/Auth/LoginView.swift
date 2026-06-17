@@ -27,6 +27,7 @@ struct LoginView: View {
         }
         .background(AppColor.background.ignoresSafeArea())
         .scrollDismissesKeyboard(.interactively)
+        .onAppear { session.errorMessage = nil }
         .sheet(isPresented: $showRegister) {
             RegisterView()
         }

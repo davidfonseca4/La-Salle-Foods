@@ -110,6 +110,8 @@ final class SessionStore: ObservableObject {
     }
 
     func signOut() async {
+        isLoading = false
+        errorMessage = nil
         try? await APIClient.postNoContent("auth/logout", body: EmptyBody())
         APIClient.clearTokens()
         currentUser = nil
