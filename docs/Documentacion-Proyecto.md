@@ -17,10 +17,15 @@ Aplicación de gestión móvil (iOS) — Giro: pedidos y recolección en cafeter
 
 ## 1. Equipo
 
+**Equipo #7 — ISSC-612**
+
 | Integrante | Rol |
 |---|---|
-| _(completar)_ | Desarrollo iOS / Backend |
-| _(completar)_ | Desarrollo / Documentación |
+| César Alberto Carrillo Páez | Desarrollo / Documentación |
+| Emiliano Ramírez Ayala | Desarrollo iOS |
+| David Fonseca Marín | Desarrollo iOS / Backend |
+| Alvaro Emiliano Mora Lerma | Desarrollo / Diseño (Figma) |
+| Cristian Jesús Estrada Andrade | Desarrollo / Documentación |
 
 ---
 
@@ -122,6 +127,21 @@ lógica de negocio — cumpliendo de lleno los requerimientos de la rúbrica.
 
 ## 6. Prototipos / capturas de la aplicación
 
+### 6.1 Mockups iniciales (Figma)
+
+<div align="center">
+
+| | | |
+|---|---|---|
+| <img src="img/figma/figma-01.png" width="180" /> | <img src="img/figma/figma-02.png" width="180" /> | <img src="img/figma/figma-03.png" width="180" /> |
+| <img src="img/figma/figma-04.png" width="180" /> | <img src="img/figma/figma-05.png" width="180" /> | <img src="img/figma/figma-06.png" width="180" /> |
+
+</div>
+
+*Prototipos de alta fidelidad realizados en Figma durante el 2.º parcial (abril 2026).*
+
+### 6.2 Implementación final (simulador)
+
 <div align="center">
 
 | Inicio de sesión | Panel del local (dueño) |
@@ -130,8 +150,7 @@ lógica de negocio — cumpliendo de lleno los requerimientos de la rúbrica.
 
 </div>
 
-*El maquetado inicial se realizó en Figma; estas capturas corresponden a la implementación
-final en el simulador (iPhone 17, iOS 26).*
+*Capturas de la app compilada en Xcode (iPhone 17, iOS 26), conectada al backend desplegado en Azure.*
 
 ---
 
