@@ -1,0 +1,46 @@
+# La Salle Foods — stack local de demostración (API Java + MySQL).
+#
+# Uso:
+#   cd backend
+#   docker compose up --build
+#
+# Backend disponible en http://localhost:8080/api  (health: /api/health)
+# En la app SwiftUI, define API_BASE_URL=http://localhost:8080/api en el
+# esquema de Xcode para apuntar a este backend.
+
+services:
+  mysql:
+    image: mysql:8.0
+    container_name: lsf-mysql
+    environment:
+      MYSQL_ROOT_PASSWORD: root
+      MYSQL_DATABASE: lasallefoods
+    command: ["--character-set-server=utf8mb4", "--collation-server=utf8mb4_unicode_ci"]
+    ports:
+      - "3307:3306"
+    volumes:
+      - ./db/schema.sql:/docker-entrypoint-initdb.d/schema.sql:ro
+      - lsf-mysql-data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-uroot", "-proot"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  api:
+    build: .
+    container_name: lsf-api
+    depends_on:
+      mysql:
+        condition: service_healthy
+    environment:
+      DB_URL: "jdbc:mysql://mysql:3306/lasallefoods?useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=UTC&characterEncoding=utf8"
+      DB_USER: "root"
+      DB_PASSWORD: "root"
+      JWT_SECRET: "cambia-este-secreto-en-produccion-0123456789abcdef"
+      SEED_ON_STARTUP: "true"
+    ports:
+      - "8080:8080"
+
+volumes:
+  lsf-mysql-data:

@@ -5,7 +5,7 @@
 //  Maneja la sesión del usuario (login/logout y rol activo) contra el
 //  backend Java (`/api/auth/*`, `/api/profile`). `profiles` guarda nombre
 //  y rol; el local de un dueño se resuelve buscando `restaurants.owner_id`
-//  vía el proxy genérico `/api/db/...`.
+//  vía el endpoint genérico `/api/db/...`.
 //
 
 import SwiftUI

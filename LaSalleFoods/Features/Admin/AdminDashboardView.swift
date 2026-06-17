@@ -17,12 +17,14 @@ struct AdminDashboardView: View {
     @State private var productFormMode: ProductFormView.Mode?
     @State private var productToDelete: Product?
     @State private var showStatusError = false
+    @State private var showEditRestaurant = false
 
     var body: some View {
         NavigationStack {
             ScrollView {
                 VStack(alignment: .leading, spacing: AppSpacing.lg) {
                     if let restaurant {
+                        restaurantHeader(for: restaurant)
                         statsRow(for: restaurant)
                         notificationsSection(for: restaurant)
                         receivedOrdersSection(for: restaurant)
@@ -41,15 +43,9 @@ struct AdminDashboardView: View {
             .background(AppColor.background.ignoresSafeArea())
             .task {
                 await catalog.loadCatalog()
-                while !Task.isCancelled {
-                    await orders.loadOrders()
-                    await orders.loadNotifications()
-                    try? await Task.sleep(for: .seconds(30))
-                }
             }
             .refreshable {
-                await orders.loadOrders()
-                await orders.loadNotifications()
+                await orders.refreshAll(showLoading: false)
             }
             .navigationTitle("Panel del local")
             .toolbar {
@@ -105,12 +101,55 @@ struct AdminDashboardView: View {
             } message: {
                 Text(orders.errorMessage ?? "Ocurrió un error inesperado.")
             }
+            .sheet(isPresented: $showEditRestaurant) {
+                if let restaurant {
+                    EditRestaurantView(restaurant: restaurant)
+                }
+            }
         }
     }
 
     private var restaurant: Restaurant? {
         guard let id = session.currentUser?.ownedRestaurantID else { return nil }
         return catalog.restaurant(by: id)
+    }
+
+    // MARK: - Mi local
+
+    private func restaurantHeader(for restaurant: Restaurant) -> some View {
+        VStack(alignment: .leading, spacing: AppSpacing.sm) {
+            HStack(spacing: AppSpacing.md) {
+                SymbolThumbnail(symbol: restaurant.symbol, hex: restaurant.coverHex, size: 56)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(restaurant.name)
+                        .font(AppFont.headline())
+                        .foregroundStyle(AppColor.textPrimary)
+                    Text(restaurant.location.isEmpty ? restaurant.category : restaurant.location)
+                        .font(AppFont.subheadline())
+                        .foregroundStyle(AppColor.textSecondary)
+                    HStack(spacing: 4) {
+                        Circle()
+                            .fill(restaurant.isOpen ? AppColor.success : AppColor.danger)
+                            .frame(width: 8, height: 8)
+                        Text(restaurant.isOpen ? "Abierto" : "Cerrado")
+                            .font(AppFont.caption())
+                            .foregroundStyle(AppColor.textSecondary)
+                    }
+                }
+                Spacer()
+            }
+            if !restaurant.tags.isEmpty {
+                HStack(spacing: AppSpacing.xs) {
+                    ForEach(restaurant.tags, id: \.self) { tag in
+                        TagChip(text: tag)
+                    }
+                }
+            }
+            AppButton(title: "Editar local", icon: "pencil", kind: .secondary) {
+                showEditRestaurant = true
+            }
+        }
+        .cardStyle()
     }
 
     // MARK: - Estadísticas

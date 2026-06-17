@@ -1,98 +1,73 @@
 package mx.lasalle.lasallefoods.servlets;
 
-import jakarta.servlet.ServletException;
-import jakarta.servlet.http.HttpServlet;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
-import mx.lasalle.lasallefoods.config.SupabaseConfig;
-import mx.lasalle.lasallefoods.http.ProxyResponse;
-import mx.lasalle.lasallefoods.http.SupabaseGateway;
+import mx.lasalle.lasallefoods.auth.AuthContext;
+import mx.lasalle.lasallefoods.repo.OrderRepository;
+import mx.lasalle.lasallefoods.web.ApiException;
+import mx.lasalle.lasallefoods.web.ApiServlet;
+import mx.lasalle.lasallefoods.web.Responses;
 import org.json.JSONObject;
 
 import java.io.IOException;
-import java.nio.charset.StandardCharsets;
+import java.sql.SQLException;
 
 /**
- * Fachada de pedidos: /api/orders y /api/orders/*.
+ * Pedidos: /api/orders y /api/orders/*.
  *
- * - POST /api/orders                -> rpc place_order
- * - GET  /api/orders                -> orders + order_lines (RLS: propios del cliente o del local del dueno)
- * - GET  /api/orders/{id}           -> detalle
- * - POST /api/orders/{id}/cancel    -> rpc cancel_order
- * - POST /api/orders/{id}/status    -> rpc update_order_status
- *
- * Mapeo declarado en web.xml.
+ * - GET  /api/orders             -> pedidos visibles (alumno: propios; dueño: del local)
+ * - GET  /api/orders/{id}        -> detalle
+ * - POST /api/orders             -> crear pedido (alumno)
+ * - POST /api/orders/{id}/cancel -> cancelar (alumno dueño del pedido o dueño del local)
+ * - POST /api/orders/{id}/status -> avanzar estado (dueño)
  */
-public class OrderServlet extends HttpServlet {
+public class OrderServlet extends ApiServlet {
 
-    private SupabaseGateway gateway;
+    private final OrderRepository orders = new OrderRepository();
 
     @Override
-    public void init() throws ServletException {
-        gateway = new SupabaseGateway(SupabaseConfig.url(), SupabaseConfig.anonKey());
+    protected void handle(HttpServletRequest req, HttpServletResponse resp)
+            throws IOException, SQLException, ApiException {
+        String[] s = segments(req);
+        switch (req.getMethod()) {
+            case "GET" -> get(req, resp, s);
+            case "POST" -> post(req, resp, s);
+            default -> methodNotAllowed();
+        }
     }
 
-    @Override
-    protected void service(HttpServletRequest req, HttpServletResponse resp) throws IOException {
-        String pathInfo = req.getPathInfo();
-        String[] segments = (pathInfo == null) ? new String[0] : pathInfo.replaceFirst("^/", "").split("/");
-        String auth = req.getHeader("Authorization");
+    private void get(HttpServletRequest req, HttpServletResponse resp, String[] s)
+            throws IOException, SQLException, ApiException {
+        String userId = requireAuth(req);
+        String role = AuthContext.role(req);
+        if (s.length == 0) {
+            Responses.ok(resp, orders.listForUser(userId, role));
+        } else if (s.length == 1) {
+            Responses.ok(resp, orders.byId(userId, role, s[0]));
+        } else {
+            throw ApiException.notFound("Recurso no encontrado.");
+        }
+    }
 
-        try {
-            switch (req.getMethod()) {
-                case "GET" -> handleGet(resp, segments, auth);
-                case "POST" -> handlePost(req, resp, segments, auth);
-                default -> resp.sendError(HttpServletResponse.SC_METHOD_NOT_ALLOWED);
+    private void post(HttpServletRequest req, HttpServletResponse resp, String[] s)
+            throws IOException, SQLException, ApiException {
+        if (s.length == 0) {
+            requireStudent(req);
+            JSONObject placed = orders.placeOrder(AuthContext.userId(req), readBody(req));
+            Responses.created(resp, placed);
+        } else if (s.length == 2 && "cancel".equals(s[1])) {
+            String userId = requireAuth(req);
+            Responses.ok(resp, orders.cancel(userId, AuthContext.role(req), s[0]));
+        } else if (s.length == 2 && "status".equals(s[1])) {
+            requireOwner(req);
+            JSONObject body = readBody(req);
+            String newStatus = body.optString("p_new_status", null);
+            if (newStatus == null) {
+                throw ApiException.badRequest("Falta el nuevo estado.");
             }
-        } catch (InterruptedException e) {
-            Thread.currentThread().interrupt();
-            resp.sendError(HttpServletResponse.SC_BAD_GATEWAY, "Upstream interrupted");
-        }
-    }
-
-    private void handleGet(HttpServletResponse resp, String[] segments, String auth)
-            throws IOException, InterruptedException {
-        ProxyResponse upstream;
-        if (segments.length == 0 || segments[0].isEmpty()) {
-            upstream = gateway.forward("GET", "/rest/v1/orders",
-                    "select=*,restaurants(name),order_lines(*)&order=created_at.desc", auth, null, null);
-        } else if (segments.length == 1) {
-            upstream = gateway.forward("GET", "/rest/v1/orders",
-                    "id=eq." + segments[0] + "&select=*,restaurants(name),order_lines(*)", auth, null, null);
+            Responses.ok(resp, orders.updateStatus(AuthContext.userId(req), s[0], newStatus));
         } else {
-            resp.sendError(HttpServletResponse.SC_NOT_FOUND);
-            return;
+            throw ApiException.notFound("Recurso no encontrado.");
         }
-        writeProxyResponse(resp, upstream);
-    }
-
-    private void handlePost(HttpServletRequest req, HttpServletResponse resp, String[] segments, String auth)
-            throws IOException, InterruptedException {
-        ProxyResponse upstream;
-        if (segments.length == 0 || segments[0].isEmpty()) {
-            byte[] body = req.getInputStream().readAllBytes();
-            upstream = gateway.forward("POST", "/rest/v1/rpc/place_order", null, auth, body, req.getContentType());
-        } else if (segments.length == 2 && "cancel".equals(segments[1])) {
-            JSONObject params = new JSONObject();
-            params.put("p_order_id", segments[0]);
-            upstream = gateway.forward("POST", "/rest/v1/rpc/cancel_order", null, auth,
-                    params.toString().getBytes(StandardCharsets.UTF_8), "application/json");
-        } else if (segments.length == 2 && "status".equals(segments[1])) {
-            byte[] body = req.getInputStream().readAllBytes();
-            JSONObject params = body.length == 0 ? new JSONObject() : new JSONObject(new String(body, StandardCharsets.UTF_8));
-            params.put("p_order_id", segments[0]);
-            upstream = gateway.forward("POST", "/rest/v1/rpc/update_order_status", null, auth,
-                    params.toString().getBytes(StandardCharsets.UTF_8), "application/json");
-        } else {
-            resp.sendError(HttpServletResponse.SC_NOT_FOUND);
-            return;
-        }
-        writeProxyResponse(resp, upstream);
-    }
-
-    private void writeProxyResponse(HttpServletResponse resp, ProxyResponse upstream) throws IOException {
-        resp.setStatus(upstream.status());
-        resp.setContentType("application/json");
-        resp.getOutputStream().write(upstream.body());
     }
 }

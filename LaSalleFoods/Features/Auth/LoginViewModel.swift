@@ -4,7 +4,7 @@
 //
 //  Lógica de presentación de la pantalla de inicio de sesión.
 //  El estado de carga/error real vive en `SessionStore` (async, conectado
-//  a Supabase Auth); aquí solo se valida el formulario antes de llamar.
+//  al backend Java); aquí solo se valida el formulario antes de llamar.
 //
 
 import SwiftUI

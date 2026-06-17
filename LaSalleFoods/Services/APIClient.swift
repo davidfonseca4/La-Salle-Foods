@@ -2,9 +2,9 @@
 //  APIClient.swift
 //  LaSalleFoods
 //
-//  Cliente HTTP único hacia el backend Java (`/api/...`). Reemplaza al
-//  cliente de Supabase: el backend reenvía a Supabase Auth/PostgREST por
-//  debajo, así que los JSON que devuelve son los mismos que antes.
+//  Cliente HTTP único hacia el backend Java (`/api/...`): autenticación
+//  (JWT), catálogo, pedidos y notificaciones. Centraliza la codificación
+//  de peticiones, el manejo de errores y el refresco de sesión.
 //
 
 import Foundation
@@ -56,8 +56,23 @@ extension Notification.Name {
 }
 
 enum APIClient {
-    /// Backend Java en Azure Container Apps.
-    static let baseURL = URL(string: "https://lasallefoods-backend.blackbay-608b8ac9.eastus2.azurecontainerapps.io/api")!
+    /// URL base del backend Java (`/api`). Se puede sobrescribir sin recompilar:
+    ///   1. variable `API_BASE_URL` del esquema de Xcode (Run > Arguments), o
+    ///   2. clave `API_BASE_URL` en Info.plist.
+    /// Útil para apuntar al backend local (`http://localhost:8080/api`) durante
+    /// el desarrollo/demo, o a un despliegue del backend Java en producción.
+    static let baseURL: URL = {
+        let candidates = [
+            ProcessInfo.processInfo.environment["API_BASE_URL"],
+            Bundle.main.object(forInfoDictionaryKey: "API_BASE_URL") as? String
+        ]
+        if let override = candidates.compactMap({ $0 })
+            .first(where: { !$0.trimmingCharacters(in: .whitespaces).isEmpty }),
+           let url = URL(string: override) {
+            return url
+        }
+        return URL(string: "https://lasallefoods-backend.whiteforest-7f031d41.westus2.azurecontainerapps.io/api")!
+    }()
 
     // MARK: - Tokens
 
@@ -221,9 +236,9 @@ enum APIClient {
             : "Ocurrió un error inesperado."
     }
 
-    /// Traduce códigos de error de Postgres/PostgREST a mensajes en español
-    /// para el usuario final. `P0001` (RAISE EXCEPTION en funciones propias)
-    /// ya viene en español natural, así que se deja pasar sin tocar.
+    /// Traduce los códigos de error que devuelve el backend a mensajes en
+    /// español para el usuario final. Los mensajes ya redactados en español
+    /// se dejan pasar sin tocar.
     private static func friendlyMessage(forCode code: String) -> String? {
         switch code {
         case "P0001":
@@ -235,7 +250,7 @@ enum APIClient {
         case "23502", "23514", "23503":
             return "Datos inválidos, revisa la información ingresada."
         default:
-            return code.hasPrefix("PGRST") ? "Error de comunicación con el servidor." : nil
+            return nil
         }
     }
 
@@ -260,7 +275,7 @@ enum APIClient {
     }
 }
 
-// MARK: - Modelos de Supabase Auth (GoTrue)
+// MARK: - Modelos de autenticación
 
 /// Respuesta de `/api/auth/login`, `/api/auth/register` (con sesión) y
 /// `/api/auth/refresh`.

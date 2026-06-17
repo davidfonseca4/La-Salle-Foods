@@ -1,71 +1,36 @@
 package mx.lasalle.lasallefoods.servlets;
 
-import jakarta.servlet.ServletException;
-import jakarta.servlet.http.HttpServlet;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
-import mx.lasalle.lasallefoods.config.SupabaseConfig;
-import mx.lasalle.lasallefoods.http.ProxyResponse;
-import mx.lasalle.lasallefoods.http.SupabaseGateway;
+import mx.lasalle.lasallefoods.repo.CatalogRepository;
+import mx.lasalle.lasallefoods.web.ApiException;
+import mx.lasalle.lasallefoods.web.ApiServlet;
+import mx.lasalle.lasallefoods.web.Responses;
 
 import java.io.IOException;
+import java.sql.SQLException;
 
 /**
- * Catalogos fijos de solo lectura (RLS publica):
- * - GET /api/restaurant-categories -> /rest/v1/restaurant_categories?select=*
- * - GET /api/product-categories    -> /rest/v1/product_categories?select=*&order=sort_order
- * - GET /api/tags                  -> /rest/v1/tags?select=*
- *
- * Mapeo declarado en web.xml.
+ * Catálogos públicos de solo lectura:
+ * - GET /api/restaurant-categories
+ * - GET /api/product-categories
+ * - GET /api/tags
  */
-public class CatalogServlet extends HttpServlet {
+public class CatalogServlet extends ApiServlet {
 
-    private SupabaseGateway gateway;
-
-    @Override
-    public void init() throws ServletException {
-        gateway = new SupabaseGateway(SupabaseConfig.url(), SupabaseConfig.anonKey());
-    }
+    private final CatalogRepository repo = new CatalogRepository();
 
     @Override
-    protected void service(HttpServletRequest req, HttpServletResponse resp) throws IOException {
+    protected void handle(HttpServletRequest req, HttpServletResponse resp)
+            throws IOException, SQLException, ApiException {
         if (!"GET".equals(req.getMethod())) {
-            resp.sendError(HttpServletResponse.SC_METHOD_NOT_ALLOWED);
-            return;
+            methodNotAllowed();
         }
-
-        String restPath;
-        String query;
-
         switch (req.getServletPath()) {
-            case "/api/restaurant-categories" -> {
-                restPath = "/rest/v1/restaurant_categories";
-                query = "select=*";
-            }
-            case "/api/product-categories" -> {
-                restPath = "/rest/v1/product_categories";
-                query = "select=*&order=sort_order";
-            }
-            case "/api/tags" -> {
-                restPath = "/rest/v1/tags";
-                query = "select=*";
-            }
-            default -> {
-                resp.sendError(HttpServletResponse.SC_NOT_FOUND);
-                return;
-            }
-        }
-
-        String auth = req.getHeader("Authorization");
-
-        try {
-            ProxyResponse upstream = gateway.forward("GET", restPath, query, auth, null, null);
-            resp.setStatus(upstream.status());
-            resp.setContentType("application/json");
-            resp.getOutputStream().write(upstream.body());
-        } catch (InterruptedException e) {
-            Thread.currentThread().interrupt();
-            resp.sendError(HttpServletResponse.SC_BAD_GATEWAY, "Upstream interrupted");
+            case "/api/restaurant-categories" -> Responses.ok(resp, repo.restaurantCategories());
+            case "/api/product-categories" -> Responses.ok(resp, repo.productCategories());
+            case "/api/tags" -> Responses.ok(resp, repo.tags());
+            default -> throw ApiException.notFound("Catálogo no encontrado.");
         }
     }
 }

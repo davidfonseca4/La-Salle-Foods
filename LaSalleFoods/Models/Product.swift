@@ -42,12 +42,12 @@ struct Product: Identifiable, Decodable, Hashable {
         self.isPopular = isPopular
     }
 
-    // MARK: - Decodificación desde Supabase
+    // MARK: - Decodificación desde la API
     //
     // El backend referencia la categoría por `category_id` (FK a
-    // `product_categories`); aquí se obtiene su nombre vía join
-    // (`select("*, product_categories(name)")`) y se mapea al `rawValue`
-    // del enum, que coincide textualmente con `product_categories.name`.
+    // `product_categories`) y devuelve el nombre embebido en
+    // `product_categories(name)`; aquí se mapea al `rawValue` del enum,
+    // que coincide textualmente con `product_categories.name`.
 
     private enum CodingKeys: String, CodingKey {
         case id, name, description, price, symbol

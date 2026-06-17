@@ -1,152 +1,93 @@
 package mx.lasalle.lasallefoods.servlets;
 
-import jakarta.servlet.ServletException;
-import jakarta.servlet.http.HttpServlet;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
-import mx.lasalle.lasallefoods.config.SupabaseConfig;
-import mx.lasalle.lasallefoods.http.ProxyResponse;
-import mx.lasalle.lasallefoods.http.SupabaseGateway;
+import mx.lasalle.lasallefoods.auth.AuthContext;
+import mx.lasalle.lasallefoods.repo.ProductRepository;
+import mx.lasalle.lasallefoods.repo.RestaurantRepository;
+import mx.lasalle.lasallefoods.web.ApiException;
+import mx.lasalle.lasallefoods.web.ApiServlet;
+import mx.lasalle.lasallefoods.web.Responses;
 import org.json.JSONArray;
 import org.json.JSONObject;
 
 import java.io.IOException;
-import java.nio.charset.StandardCharsets;
+import java.sql.SQLException;
 
 /**
- * Fachada de restaurantes: /api/restaurants y /api/restaurants/*.
+ * Restaurantes: /api/restaurants y /api/restaurants/*.
  *
- * - GET    /api/restaurants                  -> lista (is_active=eq.true)
- * - GET    /api/restaurants/{id}             -> detalle + productos
- * - GET    /api/restaurants/{id}/products    -> productos del restaurante
- * - POST   /api/restaurants                  -> alta (dueno)
- * - PATCH  /api/restaurants/{id}             -> edicion (dueno)
- * - PUT    /api/restaurants/{id}/tags        -> reemplaza set de tags
- *
- * Mapeo declarado en web.xml.
+ * - GET    /api/restaurants               -> lista visible
+ * - GET    /api/restaurants/{id}          -> detalle
+ * - GET    /api/restaurants/{id}/products -> productos del local
+ * - POST   /api/restaurants               -> alta (dueño)
+ * - PATCH  /api/restaurants/{id}          -> edición (dueño)
+ * - PUT    /api/restaurants/{id}/tags     -> reemplaza etiquetas (dueño)
  */
-public class RestaurantServlet extends HttpServlet {
+public class RestaurantServlet extends ApiServlet {
 
-    private SupabaseGateway gateway;
-
-    @Override
-    public void init() throws ServletException {
-        gateway = new SupabaseGateway(SupabaseConfig.url(), SupabaseConfig.anonKey());
-    }
+    private final RestaurantRepository restaurants = new RestaurantRepository();
+    private final ProductRepository products = new ProductRepository();
 
     @Override
-    protected void service(HttpServletRequest req, HttpServletResponse resp) throws IOException {
-        String pathInfo = req.getPathInfo();
-        String[] segments = (pathInfo == null) ? new String[0] : pathInfo.replaceFirst("^/", "").split("/");
-        String auth = req.getHeader("Authorization");
-
-        try {
-            switch (req.getMethod()) {
-                case "GET" -> handleGet(req, resp, segments, auth);
-                case "POST" -> handlePost(req, resp, segments, auth);
-                case "PATCH" -> handlePatch(req, resp, segments, auth);
-                case "PUT" -> handlePut(req, resp, segments, auth);
-                default -> resp.sendError(HttpServletResponse.SC_METHOD_NOT_ALLOWED);
-            }
-        } catch (InterruptedException e) {
-            Thread.currentThread().interrupt();
-            resp.sendError(HttpServletResponse.SC_BAD_GATEWAY, "Upstream interrupted");
+    protected void handle(HttpServletRequest req, HttpServletResponse resp)
+            throws IOException, SQLException, ApiException {
+        String[] s = segments(req);
+        switch (req.getMethod()) {
+            case "GET" -> get(req, resp, s);
+            case "POST" -> post(req, resp, s);
+            case "PATCH" -> patch(req, resp, s);
+            case "PUT" -> put(req, resp, s);
+            default -> methodNotAllowed();
         }
     }
 
-    private void handleGet(HttpServletRequest req, HttpServletResponse resp, String[] segments, String auth)
-            throws IOException, InterruptedException {
-        ProxyResponse upstream;
-        if (segments.length == 0 || segments[0].isEmpty()) {
-            upstream = gateway.forward("GET", "/rest/v1/restaurants",
-                    "select=*,restaurant_categories(name),restaurant_tags(tags(name))",
-                    auth, null, null);
-        } else if (segments.length == 1) {
-            String id = segments[0];
-            upstream = gateway.forward("GET", "/rest/v1/restaurants",
-                    "id=eq." + id + "&select=*,products(*)", auth, null, null);
-        } else if (segments.length == 2 && "products".equals(segments[1])) {
-            String id = segments[0];
-            upstream = gateway.forward("GET", "/rest/v1/products",
-                    "restaurant_id=eq." + id + "&select=*,product_categories(name)", auth, null, null);
+    private void get(HttpServletRequest req, HttpServletResponse resp, String[] s)
+            throws IOException, SQLException, ApiException {
+        String viewerId = AuthContext.userId(req);
+        if (s.length == 0) {
+            Responses.ok(resp, restaurants.listVisible(viewerId));
+        } else if (s.length == 1) {
+            Responses.ok(resp, restaurants.byId(viewerId, s[0]));
+        } else if (s.length == 2 && "products".equals(s[1])) {
+            Responses.ok(resp, products.byRestaurant(s[0]));
         } else {
-            resp.sendError(HttpServletResponse.SC_NOT_FOUND);
-            return;
+            throw ApiException.notFound("Recurso no encontrado.");
         }
-        writeProxyResponse(resp, upstream);
     }
 
-    private void handlePost(HttpServletRequest req, HttpServletResponse resp, String[] segments, String auth)
-            throws IOException, InterruptedException {
-        if (segments.length != 0 && !segments[0].isEmpty()) {
-            resp.sendError(HttpServletResponse.SC_NOT_FOUND);
-            return;
+    private void post(HttpServletRequest req, HttpServletResponse resp, String[] s)
+            throws IOException, SQLException, ApiException {
+        if (s.length != 0) {
+            throw ApiException.notFound("Recurso no encontrado.");
         }
-        byte[] body = req.getInputStream().readAllBytes();
-        ProxyResponse upstream = gateway.forward("POST", "/rest/v1/restaurants", null, auth, body, req.getContentType());
-        writeProxyResponse(resp, upstream);
+        requireOwner(req);
+        JSONObject created = restaurants.create(AuthContext.userId(req), readBody(req));
+        Responses.created(resp, created);
     }
 
-    private void handlePatch(HttpServletRequest req, HttpServletResponse resp, String[] segments, String auth)
-            throws IOException, InterruptedException {
-        if (segments.length != 1 || segments[0].isEmpty()) {
-            resp.sendError(HttpServletResponse.SC_NOT_FOUND);
-            return;
+    private void patch(HttpServletRequest req, HttpServletResponse resp, String[] s)
+            throws IOException, SQLException, ApiException {
+        if (s.length != 1) {
+            throw ApiException.notFound("Recurso no encontrado.");
         }
-        String id = segments[0];
-        byte[] body = req.getInputStream().readAllBytes();
-        ProxyResponse upstream = gateway.forward("PATCH", "/rest/v1/restaurants",
-                "id=eq." + id, auth, body, req.getContentType());
-        writeProxyResponse(resp, upstream);
+        requireOwner(req);
+        JSONObject updated = restaurants.update(AuthContext.userId(req), s[0], readBody(req));
+        Responses.ok(resp, updated);
     }
 
-    private void handlePut(HttpServletRequest req, HttpServletResponse resp, String[] segments, String auth)
-            throws IOException, InterruptedException {
-        if (segments.length != 2 || !"tags".equals(segments[1])) {
-            resp.sendError(HttpServletResponse.SC_NOT_FOUND);
-            return;
+    private void put(HttpServletRequest req, HttpServletResponse resp, String[] s)
+            throws IOException, SQLException, ApiException {
+        if (s.length != 2 || !"tags".equals(s[1])) {
+            throw ApiException.notFound("Recurso no encontrado.");
         }
-        String restaurantId = segments[0];
-        byte[] body = req.getInputStream().readAllBytes();
-
-        JSONArray tagIds;
-        try {
-            JSONObject json = new JSONObject(new String(body, StandardCharsets.UTF_8));
-            tagIds = json.getJSONArray("tag_ids");
-        } catch (Exception e) {
-            resp.sendError(HttpServletResponse.SC_BAD_REQUEST, "Body invalido: se espera {\"tag_ids\": [..]}");
-            return;
+        requireOwner(req);
+        JSONObject body = readBody(req);
+        JSONArray tagIds = body.optJSONArray("tag_ids");
+        if (tagIds == null) {
+            throw ApiException.badRequest("Se espera {\"tag_ids\": [..]}.");
         }
-
-        // Reemplazar el set completo: primero borrar las relaciones actuales.
-        ProxyResponse deleteResp = gateway.forward("DELETE", "/rest/v1/restaurant_tags",
-                "restaurant_id=eq." + restaurantId, auth, null, null);
-        if (deleteResp.status() >= 300) {
-            writeProxyResponse(resp, deleteResp);
-            return;
-        }
-
-        if (tagIds.isEmpty()) {
-            resp.setStatus(HttpServletResponse.SC_NO_CONTENT);
-            return;
-        }
-
-        JSONArray rows = new JSONArray();
-        for (int i = 0; i < tagIds.length(); i++) {
-            JSONObject row = new JSONObject();
-            row.put("restaurant_id", restaurantId);
-            row.put("tag_id", tagIds.getInt(i));
-            rows.put(row);
-        }
-
-        ProxyResponse insertResp = gateway.forward("POST", "/rest/v1/restaurant_tags", null, auth,
-                rows.toString().getBytes(StandardCharsets.UTF_8), "application/json");
-        writeProxyResponse(resp, insertResp);
-    }
-
-    private void writeProxyResponse(HttpServletResponse resp, ProxyResponse upstream) throws IOException {
-        resp.setStatus(upstream.status());
-        resp.setContentType("application/json");
-        resp.getOutputStream().write(upstream.body());
+        restaurants.replaceTags(AuthContext.userId(req), s[0], tagIds);
+        Responses.noContent(resp);
     }
 }

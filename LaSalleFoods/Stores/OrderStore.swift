@@ -3,9 +3,9 @@
 //  LaSalleFoods
 //
 //  Almacena los pedidos visibles para la sesión activa: para el alumno,
-//  su historial; para el dueño, los pedidos recibidos en su local. RLS
-//  ya filtra esto del lado del servidor (vía `/api/orders`), así que
-//  basta una sola consulta.
+//  su historial; para el dueño, los pedidos recibidos en su local. El
+//  backend ya filtra esto del lado del servidor (vía `/api/orders`), así
+//  que basta una sola consulta.
 //
 
 import SwiftUI
@@ -17,6 +17,11 @@ final class OrderStore: ObservableObject {
     @Published var errorMessage: String?
     @Published private(set) var isLoading = false
 
+    /// Intervalo de sondeo hacia Azure (pedidos + avisos). 8 s se siente casi
+    /// en tiempo real sin saturar el backend.
+    private static let autoRefreshInterval: Duration = .seconds(8)
+    private var autoRefreshTask: Task<Void, Never>?
+
     var unreadCount: Int {
         notifications.filter { !$0.isRead }.count
     }
@@ -24,21 +29,50 @@ final class OrderStore: ObservableObject {
     // MARK: - Carga
 
     func clear() {
+        stopAutoRefresh()
         orders = []
         notifications = []
     }
 
-    /// Trae los pedidos visibles para el usuario activo (RLS decide si son
-    /// los propios del alumno o los recibidos por el local del dueño).
-    func loadOrders() async {
-        errorMessage = nil
-        isLoading = true
-        defer { isLoading = false }
+    /// Sondeo continuo mientras la sesión está activa. Todas las pantallas
+    /// reciben cambios vía `@Published` sin pull-to-refresh manual.
+    func startAutoRefresh() {
+        guard autoRefreshTask == nil else { return }
+        autoRefreshTask = Task { [weak self] in
+            while !Task.isCancelled {
+                try? await Task.sleep(for: Self.autoRefreshInterval)
+                guard !Task.isCancelled else { break }
+                await self?.refreshAll(showLoading: false)
+            }
+        }
+    }
+
+    func stopAutoRefresh() {
+        autoRefreshTask?.cancel()
+        autoRefreshTask = nil
+    }
+
+    /// Recarga pedidos y avisos desde Azure.
+    func refreshAll(showLoading: Bool = false) async {
+        await loadOrders(showLoading: showLoading)
+        await loadNotifications()
+    }
+
+    /// Trae los pedidos visibles para el usuario activo (el backend decide si
+    /// son los propios del alumno o los recibidos por el local del dueño).
+    func loadOrders(showLoading: Bool = true) async {
+        if showLoading {
+            errorMessage = nil
+            isLoading = true
+        }
+        defer { if showLoading { isLoading = false } }
         do {
             let fetched: [Order] = try await APIClient.get("orders")
             orders = fetched
         } catch {
-            errorMessage = error.localizedDescription
+            if showLoading {
+                errorMessage = error.localizedDescription
+            }
         }
     }
 
@@ -46,7 +80,7 @@ final class OrderStore: ObservableObject {
         do {
             notifications = try await APIClient.get("notifications")
         } catch {
-            errorMessage = error.localizedDescription
+            // Fallo silencioso en sondeo; el usuario puede usar pull-to-refresh.
         }
     }
 

@@ -34,12 +34,6 @@ struct OrderDetailView: View {
             .padding(AppSpacing.lg)
         }
         .background(AppColor.background.ignoresSafeArea())
-        .task {
-            while !Task.isCancelled {
-                await orders.loadOrders()
-                try? await Task.sleep(for: .seconds(15))
-            }
-        }
         .navigationTitle("Pedido \(current.folio)")
         .navigationBarTitleDisplayMode(.inline)
         .confirmationDialog(

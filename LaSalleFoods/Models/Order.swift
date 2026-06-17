@@ -170,7 +170,7 @@ struct Order: Identifiable, Decodable, Hashable {
         status == .pending
     }
 
-    // MARK: - Decodificación desde Supabase
+    // MARK: - Decodificación desde la API
 
     private enum CodingKeys: String, CodingKey {
         case id, folio, lines, status

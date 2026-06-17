@@ -21,7 +21,7 @@ final class CatalogStore: ObservableObject {
     private static let restaurantSelection = "*,restaurant_categories(name),restaurant_tags(tags(name))"
 
     /// Carga locales (con categoría y tags) y todos los productos visibles
-    /// según RLS (alumnos ven los de locales activos; dueños, también los
+    /// según el rol (alumnos ven los de locales activos; dueños, también los
     /// propios aunque su local esté inactivo).
     func loadCatalog() async {
         errorMessage = nil
@@ -269,6 +269,84 @@ final class CatalogStore: ObservableObject {
             errorMessage = error.localizedDescription
             return nil
         }
+    }
+
+    /// Edita los datos del propio local (nombre, descripción, ubicación,
+    /// categoría, tiempo de preparación y si está abierto).
+    func updateRestaurant(
+        id: UUID,
+        name: String,
+        description: String,
+        location: String,
+        categoryID: Int,
+        prepMin: Int,
+        prepMax: Int,
+        isOpen: Bool
+    ) async -> Bool {
+        errorMessage = nil
+        do {
+            struct RestaurantUpdate: Encodable {
+                let name: String
+                let description: String
+                let location: String
+                let categoryID: Int
+                let prepMin: Int
+                let prepMax: Int
+                let isOpen: Bool
+
+                enum CodingKeys: String, CodingKey {
+                    case name, description, location
+                    case categoryID = "category_id"
+                    case prepMin = "prep_time_min"
+                    case prepMax = "prep_time_max"
+                    case isOpen = "is_open"
+                }
+            }
+
+            let payload = RestaurantUpdate(
+                name: name,
+                description: description,
+                location: location,
+                categoryID: categoryID,
+                prepMin: prepMin,
+                prepMax: max(prepMin, prepMax),
+                isOpen: isOpen
+            )
+
+            try await APIClient.patchNoContent("restaurants/\(id)", body: payload)
+            await loadCatalog()
+            return true
+        } catch {
+            errorMessage = error.localizedDescription
+            return false
+        }
+    }
+
+    /// Reemplaza el conjunto de etiquetas del propio local.
+    func updateRestaurantTags(id: UUID, tagIDs: [Int]) async -> Bool {
+        errorMessage = nil
+        do {
+            struct TagsBody: Encodable {
+                let tagIDs: [Int]
+                enum CodingKeys: String, CodingKey { case tagIDs = "tag_ids" }
+            }
+            try await APIClient.putNoContent("restaurants/\(id)/tags", body: TagsBody(tagIDs: tagIDs))
+            await loadCatalog()
+            return true
+        } catch {
+            errorMessage = error.localizedDescription
+            return false
+        }
+    }
+
+    /// Etiquetas disponibles en la plataforma (para asignarlas a un local).
+    func loadTags() async -> [TagOption] {
+        (try? await APIClient.get("tags")) ?? []
+    }
+
+    struct TagOption: Identifiable, Decodable, Hashable {
+        let id: Int
+        let name: String
     }
 
     // MARK: - Privado

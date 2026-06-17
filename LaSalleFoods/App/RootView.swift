@@ -11,6 +11,7 @@ import SwiftUI
 struct RootView: View {
     @EnvironmentObject private var session: SessionStore
     @EnvironmentObject private var orders: OrderStore
+    @Environment(\.scenePhase) private var scenePhase
 
     var body: some View {
         Group {
@@ -29,12 +30,41 @@ struct RootView: View {
         .animation(.easeInOut, value: session.role)
         .task {
             await session.restoreSession()
+            await activateLiveUpdatesIfNeeded()
         }
         .onChange(of: session.isAuthenticated) { _, isAuthenticated in
-            if !isAuthenticated {
-                orders.clear()
+            Task {
+                if isAuthenticated {
+                    await activateLiveUpdatesIfNeeded()
+                } else {
+                    orders.clear()
+                }
             }
         }
+        .onChange(of: scenePhase) { _, phase in
+            switch phase {
+            case .active:
+                Task { await resumeLiveUpdatesIfNeeded() }
+            case .background, .inactive:
+                orders.stopAutoRefresh()
+            @unknown default:
+                break
+            }
+        }
+    }
+
+    /// Tras login o arranque: carga inicial con indicador de carga.
+    private func activateLiveUpdatesIfNeeded() async {
+        guard session.isAuthenticated else { return }
+        await orders.refreshAll(showLoading: true)
+        orders.startAutoRefresh()
+    }
+
+    /// Al volver a primer plano: refresco silencioso sin spinner.
+    private func resumeLiveUpdatesIfNeeded() async {
+        guard session.isAuthenticated else { return }
+        await orders.refreshAll(showLoading: false)
+        orders.startAutoRefresh()
     }
 }
 

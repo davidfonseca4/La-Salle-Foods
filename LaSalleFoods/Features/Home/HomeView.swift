@@ -45,12 +45,6 @@ struct HomeView: View {
         }
         .task {
             await catalog.loadCatalog()
-            await orders.loadOrders()
-            await orders.loadNotifications()
-            while !Task.isCancelled {
-                try? await Task.sleep(for: .seconds(45))
-                await orders.loadNotifications()
-            }
         }
     }
 

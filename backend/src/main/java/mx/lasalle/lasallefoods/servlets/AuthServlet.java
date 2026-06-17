@@ -1,76 +1,84 @@
 package mx.lasalle.lasallefoods.servlets;
 
-import jakarta.servlet.ServletException;
-import jakarta.servlet.http.HttpServlet;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
-import mx.lasalle.lasallefoods.config.SupabaseConfig;
-import mx.lasalle.lasallefoods.http.ProxyResponse;
-import mx.lasalle.lasallefoods.http.SupabaseGateway;
+import mx.lasalle.lasallefoods.repo.AuthRepository;
+import mx.lasalle.lasallefoods.web.ApiException;
+import mx.lasalle.lasallefoods.web.ApiServlet;
+import mx.lasalle.lasallefoods.web.Responses;
+import org.json.JSONObject;
 
 import java.io.IOException;
+import java.sql.SQLException;
 
 /**
- * Proxy de autenticacion: /api/auth/* -> {SUPABASE_URL}/auth/v1/*.
+ * Autenticación propia contra MySQL: /api/auth/*.
  *
- * El backend no implementa su propio sistema de usuarios; solo reenvia
- * a Supabase Auth (GoTrue) agregando el header apikey y propagando el
- * body / Authorization / status code tal cual.
- *
- * Mapeo declarado en web.xml.
+ * - POST /api/auth/register -> alta de cuenta (correo institucional) + sesión
+ * - POST /api/auth/login    -> inicio de sesión
+ * - POST /api/auth/refresh  -> renovación de sesión
+ * - GET  /api/auth/me       -> usuario autenticado {id, email}
+ * - POST /api/auth/logout   -> cierre de sesión
  */
-public class AuthServlet extends HttpServlet {
+public class AuthServlet extends ApiServlet {
 
-    private SupabaseGateway gateway;
+    private final AuthRepository repo = new AuthRepository();
 
     @Override
-    public void init() throws ServletException {
-        gateway = new SupabaseGateway(SupabaseConfig.url(), SupabaseConfig.anonKey());
+    protected void handle(HttpServletRequest req, HttpServletResponse resp)
+            throws IOException, SQLException, ApiException {
+        String[] segments = segments(req);
+        if (segments.length != 1) {
+            throw ApiException.notFound("Ruta de autenticación no encontrada.");
+        }
+
+        switch (segments[0]) {
+            case "register" -> register(req, resp);
+            case "login" -> login(req, resp);
+            case "refresh" -> refresh(req, resp);
+            case "me" -> me(req, resp);
+            case "logout" -> logout(req, resp);
+            default -> throw ApiException.notFound("Ruta de autenticación no encontrada.");
+        }
     }
 
-    @Override
-    protected void service(HttpServletRequest req, HttpServletResponse resp) throws IOException {
-        String subPath = req.getPathInfo();
-        if (subPath == null) {
-            resp.sendError(HttpServletResponse.SC_NOT_FOUND);
-            return;
+    private void register(HttpServletRequest req, HttpServletResponse resp)
+            throws IOException, SQLException, ApiException {
+        JSONObject body = readBody(req);
+        JSONObject data = body.optJSONObject("data");
+        String fullName = data != null ? data.optString("full_name", "") : "";
+        String role = data != null ? data.optString("role", "student") : "student";
+        JSONObject session = repo.register(
+                body.optString("email", ""), body.optString("password", ""), fullName, role);
+        Responses.json(resp, 200, session);
+    }
+
+    private void login(HttpServletRequest req, HttpServletResponse resp)
+            throws IOException, SQLException, ApiException {
+        JSONObject body = readBody(req);
+        JSONObject session = repo.login(body.optString("email", ""), body.optString("password", ""));
+        Responses.ok(resp, session);
+    }
+
+    private void refresh(HttpServletRequest req, HttpServletResponse resp)
+            throws IOException, SQLException, ApiException {
+        JSONObject body = readBody(req);
+        JSONObject session = repo.refresh(body.optString("refresh_token", null));
+        Responses.ok(resp, session);
+    }
+
+    private void me(HttpServletRequest req, HttpServletResponse resp)
+            throws IOException, SQLException, ApiException {
+        String userId = requireAuth(req);
+        Responses.ok(resp, repo.me(userId));
+    }
+
+    private void logout(HttpServletRequest req, HttpServletResponse resp) throws SQLException {
+        // Idempotente: aunque el token ya no sea válido, respondemos OK.
+        Object userId = req.getAttribute(mx.lasalle.lasallefoods.auth.AuthContext.ATTR_USER_ID);
+        if (userId != null) {
+            repo.logout(userId.toString());
         }
-
-        String authPath;
-        String query = req.getQueryString();
-
-        switch (subPath) {
-            case "/register" -> authPath = "/auth/v1/signup";
-            case "/login" -> {
-                authPath = "/auth/v1/token";
-                query = "grant_type=password";
-            }
-            case "/refresh" -> {
-                authPath = "/auth/v1/token";
-                query = "grant_type=refresh_token";
-            }
-            case "/me" -> authPath = "/auth/v1/user";
-            case "/logout" -> authPath = "/auth/v1/logout";
-            case "/recover" -> authPath = "/auth/v1/recover";
-            default -> {
-                resp.sendError(HttpServletResponse.SC_NOT_FOUND);
-                return;
-            }
-        }
-
-        String auth = req.getHeader("Authorization");
-        byte[] body = req.getInputStream().readAllBytes();
-
-        try {
-            ProxyResponse upstream = gateway.forward(
-                    req.getMethod(), authPath, query, auth, body, req.getContentType());
-
-            resp.setStatus(upstream.status());
-            resp.setContentType("application/json");
-            resp.getOutputStream().write(upstream.body());
-        } catch (InterruptedException e) {
-            Thread.currentThread().interrupt();
-            resp.sendError(HttpServletResponse.SC_BAD_GATEWAY, "Upstream interrupted");
-        }
+        Responses.noContent(resp);
     }
 }

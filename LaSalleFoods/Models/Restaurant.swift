@@ -57,7 +57,7 @@ struct Restaurant: Identifiable, Decodable, Hashable {
         "\(prepTimeMinutes.lowerBound)–\(prepTimeMinutes.upperBound) min"
     }
 
-    // MARK: - Decodificación desde Supabase
+    // MARK: - Decodificación desde la API
     //
     // El backend separa lo que aquí es un solo `category: String` en una
     // relación (`restaurant_categories`) y `tags` en una tabla puente

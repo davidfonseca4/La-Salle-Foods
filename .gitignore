@@ -1,0 +1,14 @@
+# macOS
+.DS_Store
+._*
+
+# Xcode usuario
+xcuserdata/
+*.xcuserstate
+
+# Maven
+backend/target/
+
+# Secretos locales
+backend/.env
+.env

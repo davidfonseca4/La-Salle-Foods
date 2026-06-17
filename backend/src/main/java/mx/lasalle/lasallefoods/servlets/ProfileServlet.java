@@ -1,68 +1,39 @@
 package mx.lasalle.lasallefoods.servlets;
 
-import jakarta.servlet.ServletException;
-import jakarta.servlet.http.HttpServlet;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
-import mx.lasalle.lasallefoods.config.SupabaseConfig;
-import mx.lasalle.lasallefoods.http.ProxyResponse;
-import mx.lasalle.lasallefoods.http.SupabaseGateway;
+import mx.lasalle.lasallefoods.repo.AuthRepository;
+import mx.lasalle.lasallefoods.web.ApiException;
+import mx.lasalle.lasallefoods.web.ApiServlet;
+import mx.lasalle.lasallefoods.web.Responses;
+import org.json.JSONObject;
 
 import java.io.IOException;
+import java.sql.SQLException;
 
 /**
- * Fachada de perfil: /api/profile.
+ * Perfil propio: /api/profile.
  *
- * - GET   /api/profile -> /rest/v1/profiles?select=*  (RLS limita a id = auth.uid())
- * - PATCH /api/profile -> /rest/v1/profiles?id=eq.{uid}  body: { "full_name": "..." }
- *
- * El {uid} se obtiene llamando a {SUPABASE_URL}/auth/v1/user con el
- * Authorization del cliente (mismo patron que AuthServlet /api/auth/me).
- *
- * Mapeo declarado en web.xml.
+ * - GET   -> [{ id, full_name, role, email }]  (solo el propio)
+ * - PATCH -> actualiza full_name (el rol es inmutable)
  */
-public class ProfileServlet extends HttpServlet {
+public class ProfileServlet extends ApiServlet {
 
-    private SupabaseGateway gateway;
-
-    @Override
-    public void init() throws ServletException {
-        gateway = new SupabaseGateway(SupabaseConfig.url(), SupabaseConfig.anonKey());
-    }
+    private final AuthRepository repo = new AuthRepository();
 
     @Override
-    protected void service(HttpServletRequest req, HttpServletResponse resp) throws IOException {
-        String auth = req.getHeader("Authorization");
+    protected void handle(HttpServletRequest req, HttpServletResponse resp)
+            throws IOException, SQLException, ApiException {
+        String userId = requireAuth(req);
 
-        try {
-            switch (req.getMethod()) {
-                case "GET" -> {
-                    ProxyResponse upstream = gateway.forward("GET", "/rest/v1/profiles", "select=*", auth, null, null);
-                    writeProxyResponse(resp, upstream);
-                }
-                case "PATCH" -> {
-                    ProxyResponse userResponse = gateway.fetchCurrentUser(auth);
-                    String uid = SupabaseGateway.extractUserId(userResponse);
-                    if (uid == null) {
-                        writeProxyResponse(resp, userResponse);
-                        return;
-                    }
-                    byte[] body = req.getInputStream().readAllBytes();
-                    ProxyResponse upstream = gateway.forward("PATCH", "/rest/v1/profiles",
-                            "id=eq." + uid, auth, body, req.getContentType());
-                    writeProxyResponse(resp, upstream);
-                }
-                default -> resp.sendError(HttpServletResponse.SC_METHOD_NOT_ALLOWED);
+        switch (req.getMethod()) {
+            case "GET" -> Responses.ok(resp, repo.profile(userId));
+            case "PATCH" -> {
+                JSONObject body = readBody(req);
+                repo.updateFullName(userId, body.optString("full_name", null));
+                Responses.noContent(resp);
             }
-        } catch (InterruptedException e) {
-            Thread.currentThread().interrupt();
-            resp.sendError(HttpServletResponse.SC_BAD_GATEWAY, "Upstream interrupted");
+            default -> methodNotAllowed();
         }
-    }
-
-    private void writeProxyResponse(HttpServletResponse resp, ProxyResponse upstream) throws IOException {
-        resp.setStatus(upstream.status());
-        resp.setContentType("application/json");
-        resp.getOutputStream().write(upstream.body());
     }
 }

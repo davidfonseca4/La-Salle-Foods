@@ -5,7 +5,7 @@
 //  Aviso dentro de la app. Sirve tanto para el dueño del local (ej. el
 //  comprador canceló un pedido) como para el alumno (ej. su pedido ya
 //  está listo para recoger). El destinatario es siempre `profiles.id`,
-//  sin importar el rol — RLS garantiza que cada quien solo vea lo suyo.
+//  sin importar el rol — el backend garantiza que cada quien solo vea lo suyo.
 //
 
 import Foundation

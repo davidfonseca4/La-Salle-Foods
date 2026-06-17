@@ -8,9 +8,8 @@
 import Foundation
 
 extension String {
-    /// El backend (trigger `validate_email_domain`) solo acepta correos
-    /// @lasallebajio.edu.mx; validamos aquí para dar feedback inmediato
-    /// en vez de un error 500 genérico de Supabase.
+    /// El backend solo acepta correos @lasallebajio.edu.mx; validamos aquí
+    /// para dar feedback inmediato en vez de esperar el error del servidor.
     var isInstitutionalEmail: Bool {
         range(of: #"^[a-zA-Z0-9._%+-]+@lasallebajio\.edu\.mx$"#, options: .regularExpression) != nil
     }

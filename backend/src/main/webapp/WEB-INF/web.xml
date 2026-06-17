@@ -7,6 +7,15 @@
   <display-name>lasallefoods-backend</display-name>
 
   <filter>
+    <filter-name>AuthFilter</filter-name>
+    <filter-class>mx.lasalle.lasallefoods.filters.AuthFilter</filter-class>
+  </filter>
+  <filter-mapping>
+    <filter-name>AuthFilter</filter-name>
+    <url-pattern>/api/*</url-pattern>
+  </filter-mapping>
+
+  <filter>
     <filter-name>LoggingFilter</filter-name>
     <filter-class>mx.lasalle.lasallefoods.filters.LoggingFilter</filter-class>
   </filter>
@@ -25,11 +34,11 @@
   </servlet-mapping>
 
   <servlet>
-    <servlet-name>RestProxyServlet</servlet-name>
-    <servlet-class>mx.lasalle.lasallefoods.servlets.RestProxyServlet</servlet-class>
+    <servlet-name>DbServlet</servlet-name>
+    <servlet-class>mx.lasalle.lasallefoods.servlets.DbServlet</servlet-class>
   </servlet>
   <servlet-mapping>
-    <servlet-name>RestProxyServlet</servlet-name>
+    <servlet-name>DbServlet</servlet-name>
     <url-pattern>/api/db/*</url-pattern>
   </servlet-mapping>
 

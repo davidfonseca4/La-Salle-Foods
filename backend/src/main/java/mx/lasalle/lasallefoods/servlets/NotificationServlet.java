@@ -1,73 +1,46 @@
 package mx.lasalle.lasallefoods.servlets;
 
-import jakarta.servlet.ServletException;
-import jakarta.servlet.http.HttpServlet;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
-import mx.lasalle.lasallefoods.config.SupabaseConfig;
-import mx.lasalle.lasallefoods.http.ProxyResponse;
-import mx.lasalle.lasallefoods.http.SupabaseGateway;
-import org.json.JSONObject;
+import mx.lasalle.lasallefoods.repo.NotificationRepository;
+import mx.lasalle.lasallefoods.web.ApiException;
+import mx.lasalle.lasallefoods.web.ApiServlet;
+import mx.lasalle.lasallefoods.web.Responses;
 
 import java.io.IOException;
-import java.nio.charset.StandardCharsets;
+import java.sql.SQLException;
 
 /**
- * Fachada de notificaciones: /api/notifications y /api/notifications/*.
+ * Notificaciones: /api/notifications y /api/notifications/*.
  *
- * - GET  /api/notifications          -> notifications (RLS: recipient_id = auth.uid())
- * - POST /api/notifications/{id}/read -> rpc mark_notification_read
- *
- * Mapeo declarado en web.xml.
+ * - GET  /api/notifications           -> avisos propios
+ * - POST /api/notifications/{id}/read -> marcar como leída (solo propias)
  */
-public class NotificationServlet extends HttpServlet {
+public class NotificationServlet extends ApiServlet {
 
-    private SupabaseGateway gateway;
-
-    @Override
-    public void init() throws ServletException {
-        gateway = new SupabaseGateway(SupabaseConfig.url(), SupabaseConfig.anonKey());
-    }
+    private final NotificationRepository notifications = new NotificationRepository();
 
     @Override
-    protected void service(HttpServletRequest req, HttpServletResponse resp) throws IOException {
-        String pathInfo = req.getPathInfo();
-        String[] segments = (pathInfo == null) ? new String[0] : pathInfo.replaceFirst("^/", "").split("/");
-        String auth = req.getHeader("Authorization");
+    protected void handle(HttpServletRequest req, HttpServletResponse resp)
+            throws IOException, SQLException, ApiException {
+        String userId = requireAuth(req);
+        String[] s = segments(req);
 
-        try {
-            switch (req.getMethod()) {
-                case "GET" -> {
-                    if (segments.length != 0 && !segments[0].isEmpty()) {
-                        resp.sendError(HttpServletResponse.SC_NOT_FOUND);
-                        return;
-                    }
-                    ProxyResponse upstream = gateway.forward("GET", "/rest/v1/notifications",
-                            "select=*&order=created_at.desc", auth, null, null);
-                    writeProxyResponse(resp, upstream);
+        switch (req.getMethod()) {
+            case "GET" -> {
+                if (s.length != 0) {
+                    throw ApiException.notFound("Recurso no encontrado.");
                 }
-                case "POST" -> {
-                    if (segments.length != 2 || !"read".equals(segments[1])) {
-                        resp.sendError(HttpServletResponse.SC_NOT_FOUND);
-                        return;
-                    }
-                    JSONObject params = new JSONObject();
-                    params.put("p_notification_id", segments[0]);
-                    ProxyResponse upstream = gateway.forward("POST", "/rest/v1/rpc/mark_notification_read", null, auth,
-                            params.toString().getBytes(StandardCharsets.UTF_8), "application/json");
-                    writeProxyResponse(resp, upstream);
-                }
-                default -> resp.sendError(HttpServletResponse.SC_METHOD_NOT_ALLOWED);
+                Responses.ok(resp, notifications.listForUser(userId));
             }
-        } catch (InterruptedException e) {
-            Thread.currentThread().interrupt();
-            resp.sendError(HttpServletResponse.SC_BAD_GATEWAY, "Upstream interrupted");
+            case "POST" -> {
+                if (s.length != 2 || !"read".equals(s[1])) {
+                    throw ApiException.notFound("Recurso no encontrado.");
+                }
+                notifications.markRead(userId, s[0]);
+                Responses.noContent(resp);
+            }
+            default -> methodNotAllowed();
         }
-    }
-
-    private void writeProxyResponse(HttpServletResponse resp, ProxyResponse upstream) throws IOException {
-        resp.setStatus(upstream.status());
-        resp.setContentType("application/json");
-        resp.getOutputStream().write(upstream.body());
     }
 }

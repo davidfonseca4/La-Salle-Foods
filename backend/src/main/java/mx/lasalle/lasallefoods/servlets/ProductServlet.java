@@ -1,92 +1,58 @@
 package mx.lasalle.lasallefoods.servlets;
 
-import jakarta.servlet.ServletException;
-import jakarta.servlet.http.HttpServlet;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
-import mx.lasalle.lasallefoods.config.SupabaseConfig;
-import mx.lasalle.lasallefoods.http.ProxyResponse;
-import mx.lasalle.lasallefoods.http.SupabaseGateway;
+import mx.lasalle.lasallefoods.auth.AuthContext;
+import mx.lasalle.lasallefoods.repo.ProductRepository;
+import mx.lasalle.lasallefoods.web.ApiException;
+import mx.lasalle.lasallefoods.web.ApiServlet;
+import mx.lasalle.lasallefoods.web.Responses;
+import org.json.JSONObject;
 
 import java.io.IOException;
+import java.sql.SQLException;
 
 /**
- * Fachada de productos del dueno: /api/products y /api/products/*.
+ * Productos del dueño: /api/products y /api/products/*.
  *
  * - POST   /api/products       -> alta
- * - PATCH  /api/products/{id}  -> edicion (disponibilidad, precio, etc.)
- * - DELETE /api/products/{id}  -> borrado
- *
- * Mapeo declarado en web.xml.
+ * - PATCH  /api/products/{id}  -> edición
+ * - DELETE /api/products/{id}  -> baja
  */
-public class ProductServlet extends HttpServlet {
+public class ProductServlet extends ApiServlet {
 
-    private SupabaseGateway gateway;
-
-    @Override
-    public void init() throws ServletException {
-        gateway = new SupabaseGateway(SupabaseConfig.url(), SupabaseConfig.anonKey());
-    }
+    private final ProductRepository products = new ProductRepository();
 
     @Override
-    protected void service(HttpServletRequest req, HttpServletResponse resp) throws IOException {
-        String pathInfo = req.getPathInfo();
-        String auth = req.getHeader("Authorization");
+    protected void handle(HttpServletRequest req, HttpServletResponse resp)
+            throws IOException, SQLException, ApiException {
+        String[] s = segments(req);
+        requireOwner(req);
+        String ownerId = AuthContext.userId(req);
 
-        try {
-            switch (req.getMethod()) {
-                case "POST" -> {
-                    if (pathInfo != null && !pathInfo.equals("/")) {
-                        resp.sendError(HttpServletResponse.SC_NOT_FOUND);
-                        return;
-                    }
-                    byte[] body = req.getInputStream().readAllBytes();
-                    ProxyResponse upstream = gateway.forward("POST", "/rest/v1/products", null, auth, body, req.getContentType());
-                    writeProxyResponse(resp, upstream);
+        switch (req.getMethod()) {
+            case "POST" -> {
+                if (s.length != 0) {
+                    throw ApiException.notFound("Recurso no encontrado.");
                 }
-                case "PATCH" -> {
-                    String id = idFromPath(pathInfo);
-                    if (id == null) {
-                        resp.sendError(HttpServletResponse.SC_NOT_FOUND);
-                        return;
-                    }
-                    byte[] body = req.getInputStream().readAllBytes();
-                    ProxyResponse upstream = gateway.forward("PATCH", "/rest/v1/products",
-                            "id=eq." + id, auth, body, req.getContentType());
-                    writeProxyResponse(resp, upstream);
-                }
-                case "DELETE" -> {
-                    String id = idFromPath(pathInfo);
-                    if (id == null) {
-                        resp.sendError(HttpServletResponse.SC_NOT_FOUND);
-                        return;
-                    }
-                    ProxyResponse upstream = gateway.forward("DELETE", "/rest/v1/products",
-                            "id=eq." + id, auth, null, null);
-                    writeProxyResponse(resp, upstream);
-                }
-                default -> resp.sendError(HttpServletResponse.SC_METHOD_NOT_ALLOWED);
+                JSONObject created = products.create(ownerId, readBody(req));
+                Responses.created(resp, created);
             }
-        } catch (InterruptedException e) {
-            Thread.currentThread().interrupt();
-            resp.sendError(HttpServletResponse.SC_BAD_GATEWAY, "Upstream interrupted");
+            case "PATCH" -> {
+                if (s.length != 1) {
+                    throw ApiException.notFound("Recurso no encontrado.");
+                }
+                products.update(ownerId, s[0], readBody(req));
+                Responses.noContent(resp);
+            }
+            case "DELETE" -> {
+                if (s.length != 1) {
+                    throw ApiException.notFound("Recurso no encontrado.");
+                }
+                products.delete(ownerId, s[0]);
+                Responses.noContent(resp);
+            }
+            default -> methodNotAllowed();
         }
-    }
-
-    private static String idFromPath(String pathInfo) {
-        if (pathInfo == null || pathInfo.length() < 2) {
-            return null;
-        }
-        String stripped = pathInfo.substring(1);
-        if (stripped.isEmpty() || stripped.contains("/")) {
-            return null;
-        }
-        return stripped;
-    }
-
-    private void writeProxyResponse(HttpServletResponse resp, ProxyResponse upstream) throws IOException {
-        resp.setStatus(upstream.status());
-        resp.setContentType("application/json");
-        resp.getOutputStream().write(upstream.body());
     }
 }
